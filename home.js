@@ -1,12 +1,12 @@
 // ==========================================
-// PLIK 2: home.js - BUDŻET DOMOWY (Premium UI, Historia, Planowane, Zarządzanie)
+// PLIK 2: home.js - BUDŻET DOMOWY (StyreOS 3.0 Premium, Cele, Długi, Szablony)
 // ==========================================
 const C_EXP = { 'Stałe opłaty / Czynsz': {c: '#f59e0b', i: '🏢'}, 'Prąd / Gaz / Woda': {c: '#0ea5e9', i: '⚡'}, 'Internet i Telefon': {c: '#8b5cf6', i: '🌐'}, 'Kredyt / Leasing': {c: '#ef4444', i: '🏦'}, 'Zakupy Spożywcze': {c: '#22c55e', i: '🛒'}, 'Dom i Rachunki': {c: '#14b8a6', i: '🏠'}, 'Auto i Transport': {c: '#f59e0b', i: '🚗'}, 'Rozrywka': {c: '#a855f7', i: '🎉'}, 'Jedzenie na mieście': {c: '#ef4444', i: '🍔'}, 'Ubrania': {c: '#ec4899', i: '👗'}, 'Zdrowie': {c: '#10b981', i: '💊'}, 'Oszczędności / Skarbonka': {c: '#10b981', i: '🐷'}, 'Inne Wydatki': {c: '#64748b', i: '📦'} };
 const C_INC = { 'Wypłata z Etatu': {c: '#22c55e', i: '💼'}, 'Utarg z Taxi': {c: '#3b82f6', i: '🚕'}, 'Premia / Prezent': {c: '#10b981', i: '🎁'}, 'Inne Wpływy': {c: '#14b8a6', i: '📈'} };
-const FIXED_EXP_CATS = ['Stałe opłaty / Czynsz', 'Prąd / Gaz / Woda', 'Internet i Telefon', 'Kredyt / Leasing', 'Oszczędności / Skarbonka'];
 
 window.hHistFilter = window.hHistFilter || 'all';
 window.hCalMode = window.hCalMode || 'history';
+if(!db.home.goals) db.home.goals = [];
 
 window.hGetBal = function() { 
     let b = {}; 
@@ -53,148 +53,158 @@ window.hAddRecurring = function() {
     window.save(); window.render(); window.sysAlert("Sukces", "Dodano do automatu!", "success"); 
 }
 window.hDelRecurring = function(id) { db.home.recurring = db.home.recurring.filter(r => r.id !== id); window.save(); window.render(); }
-window.hAddDebt = function() { let n = document.getElementById('hd-name').value; let v = parseFloat(document.getElementById('hd-val').value); if(!n || !v || v <= 0) return window.sysAlert("Błąd", "Wpisz osobę i kwotę!"); db.home.debts.push({ id: Date.now(), person: n, amount: v, type: window.hDebtType, date: new Date().toLocaleDateString('pl-PL') }); window.save(); window.render(); }
-window.hDelDebt = function(id) { db.home.debts = db.home.debts.filter(d => d.id !== id); window.save(); window.render(); }
 
-// --- NOWE ZARZĄDZANIE KONTAMI ---
-window.hAddNewAcc = function() { 
-    window.sysPrompt("Nazwa Konta", "Wpisz nazwę (np. mBank, Skarbonka)", (n) => { 
-        if(!n) return;
-        let iconOpts = "Wpisz cyfrę:\n1 = 🏦 Bank\n2 = 💵 Portfel\n3 = 💳 Karta\n4 = 🐷 Skarbonka\n5 = 📈 Inwestycje";
-        window.sysPrompt("Wybierz Ikonę", iconOpts, (iChoice) => {
-            let ico = '🏦'; let col = '#8b5cf6';
-            if(iChoice == '2') { ico = '💵'; col = '#22c55e'; }
-            if(iChoice == '3') { ico = '💳'; col = '#f59e0b'; }
-            if(iChoice == '4') { ico = '🐷'; col = '#ec4899'; }
-            if(iChoice == '5') { ico = '📈'; col = '#0ea5e9'; }
-            db.home.accs.push({id:'acc_'+Date.now(), n:n, c:col, i:ico, startBal:0}); 
-            save(); render(); 
-        });
-    }); 
+// --- INTELIGENTNY ZESZYT DŁUGÓW ---
+window.hAddDebt = function() { 
+    let n = document.getElementById('hd-name').value; let v = parseFloat(document.getElementById('hd-val').value); 
+    if(!n || !v || v <= 0) return window.sysAlert("Błąd", "Wpisz osobę i kwotę!"); 
+    let dId = Date.now();
+    let isOwe = window.hDebtType === 'i_owe';
+    let dObj = new Date(); dObj.setDate(dObj.getDate() + 30); // Planowane na za 30 dni
+    
+    db.home.debts.push({ id: dId, person: n, amount: v, type: window.hDebtType, date: new Date().toLocaleDateString('pl-PL') }); 
+    db.home.trans.push({ id: 'd_'+dId, type: isOwe?'exp':'inc', cat: isOwe?'Inne Wydatki':'Inne Wpływy', acc: db.home.accs[0].id, d: 'Dług: '+n, v: v, who: db.userName, dt: dObj.toLocaleDateString('pl-PL'), rD: dObj.toISOString(), isPlanned: true, debtId: dId });
+    db.home.trans.sort((a,b) => new Date(b.rD) - new Date(a.rD));
+    window.save(); window.render(); window.sysAlert("Sukces", "Zapisano dług i dodano do planowanych!", "success");
+}
+window.hDelDebt = function(id) { 
+    let d = db.home.debts.find(x => x.id === id);
+    if(d) {
+        let tr = db.home.trans.find(x => x.debtId === id);
+        if(tr) { 
+            tr.isPlanned = false; 
+            tr.dt = new Date().toLocaleDateString('pl-PL'); 
+            let nd = new Date(); nd.setHours(12,0,0);
+            tr.rD = nd.toISOString(); 
+            tr.d = 'Spłacono: ' + d.person;
+            window.sysAlert("Rozliczono!", "Pieniądze dodane do bilansu.", "success");
+        }
+    }
+    db.home.debts = db.home.debts.filter(d => d.id !== id); 
+    window.save(); window.render(); 
 }
 
-window.hChangeIcon = function(id) {
-    let iconOpts = "Wpisz cyfrę by zmienić:\n1 = 🏦 Bank (Fiolet)\n2 = 💵 Portfel (Zielony)\n3 = 💳 Karta (Pomarańcz)\n4 = 🐷 Skarbonka (Róż)\n5 = 📈 Inwestycje (Niebieski)";
-    window.sysPrompt("Wybierz nową Ikonę", iconOpts, (iChoice) => {
-        if(!iChoice) return;
-        let ac = db.home.accs.find(x => x.id === id);
-        if(ac) {
-            if(iChoice == '1') { ac.i = '🏦'; ac.c = '#8b5cf6'; }
-            else if(iChoice == '2') { ac.i = '💵'; ac.c = '#22c55e'; }
-            else if(iChoice == '3') { ac.i = '💳'; ac.c = '#f59e0b'; }
-            else if(iChoice == '4') { ac.i = '🐷'; ac.c = '#ec4899'; }
-            else if(iChoice == '5') { ac.i = '📈'; ac.c = '#0ea5e9'; }
-            window.save(); window.render();
-        }
+// --- CELE I KREDYTY (Paski Postępu) ---
+window.hAddGoal = function() {
+    window.sysPrompt("Nowy Cel / Kredyt", "Wpisz nazwę (np. Kredyt Auto, Malediwy):", (n) => {
+        if(!n) return;
+        window.sysPrompt("Kwota Docelowa", "Wpisz kwotę docelową (np. 50000):", (v) => {
+            let val = parseFloat(v); if(isNaN(val) || val <= 0) return;
+            let iconOpts = "1=🏠 Dom, 2=🚗 Auto, 3=🏖️ Wakacje, 4=🛡️ Poduszka";
+            window.sysPrompt("Kategoria Celu", iconOpts, (iChoice) => {
+                let cat = 'Oszczędności / Skarbonka'; let ico='🏖️'; let col='#0ea5e9';
+                if(iChoice=='1'){cat='Dom i Rachunki'; ico='🏠'; col='#14b8a6';}
+                if(iChoice=='2'){cat='Kredyt / Leasing'; ico='🚗'; col='#f59e0b';}
+                if(iChoice=='4'){cat='Inne Wydatki'; ico='🛡️'; col='#8b5cf6';}
+                db.home.goals.push({id:Date.now(), n:n, v:val, c:cat, ico:ico, col:col});
+                window.save(); window.render();
+            });
+        });
     });
 }
+window.hDelGoal = function(id) { window.sysConfirm("Usuwanie", "Usunąć ten cel?", () => { db.home.goals = db.home.goals.filter(x=>x.id!==id); window.save(); window.render(); }); }
+
+// --- GRAFICZNY WYBÓR IKON KONT ---
+window.hShowIconPicker = function(accId) {
+    let icons = [['🏦','#8b5cf6'],['💵','#22c55e'],['💳','#f59e0b'],['🐷','#ec4899'],['📈','#0ea5e9'],['💼','#64748b'],['💎','#eab308']];
+    let html = `<div id="m-icon-picker" class="modal-overlay" style="z-index: 30000; animation:fadeIn 0.2s; backdrop-filter:blur(5px);">
+        <div class="panel" style="width:100%; max-width:320px; text-align:center; background:#09090b; border:1px solid rgba(255,255,255,0.1); border-radius:24px;">
+            <h3 style="margin-top:0; color:#fff; font-size:1.3rem;">Wybierz Ikonę</h3>
+            <p style="font-size:0.8rem; color:var(--muted); margin-bottom:20px;">Kliknij, aby przypisać do konta.</p>
+            <div style="display:flex; flex-wrap:wrap; gap:15px; justify-content:center; margin-bottom:25px;">
+                ${icons.map(i=>`<div onclick="window.hApplyIcon('${accId}','${i[0]}','${i[1]}')" style="font-size:2.2rem; width:70px; height:70px; display:flex; align-items:center; justify-content:center; background:${i[1]}15; border:2px solid ${i[1]}55; border-radius:18px; cursor:pointer; transition:transform 0.2s;" onmousedown="this.style.transform='scale(0.9)'">${i[0]}</div>`).join('')}
+            </div>
+            <button class="btn" style="background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1);" onclick="document.getElementById('m-icon-picker').remove()">ANULUJ</button>
+        </div></div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+}
+window.hApplyIcon = function(id, ico, col) {
+    let ac = db.home.accs.find(x => x.id === id);
+    if(ac) { ac.i = ico; ac.c = col; window.save(); window.render(); }
+    document.getElementById('m-icon-picker').remove();
+}
+
+window.hAddNewAcc = function() { window.sysPrompt("Nazwa Konta", "Wpisz nazwę (np. mBank, Gotówka)", (n) => { if(n) { db.home.accs.push({id:'acc_'+Date.now(), n:n, c:'#8b5cf6', i:'🏦', startBal:0}); save(); render(); window.hShowIconPicker('acc_'+(Date.now()-100)); }}); }
 window.hDelAcc = function(id) { if(db.home.accs.length <= 1) return window.sysAlert("Błąd", "Musisz mieć min. 1 konto!"); window.sysConfirm("Usuwanie konta", "Na pewno? Znikną przypisane środki.", () => { db.home.accs = db.home.accs.filter(a => a.id !== id); save(); render(); }); }
 window.hSetBudget = function() { let cat = document.getElementById('hb-cat').value; let val = parseFloat(document.getElementById('hb-val').value); if(!db.home.budgets) db.home.budgets = {}; if(val > 0) { db.home.budgets[cat] = val; window.sysAlert("Sukces", "Ustawiono limit.", "success");} else { delete db.home.budgets[cat]; } save(); render(); }
 
 // --- EDYCJA I USUWANIE TRANSAKCJI ---
-window.hDelTrans = function(id) {
-    window.sysConfirm("Usuwanie", "Na pewno usunąć tę operację?", () => {
-        db.home.trans = db.home.trans.filter(x => x.id !== id);
-        window.save(); window.render();
-    });
-};
-
+window.hDelTrans = function(id) { window.sysConfirm("Usuwanie", "Na pewno usunąć tę operację?", () => { db.home.trans = db.home.trans.filter(x => x.id !== id); window.save(); window.render(); }); };
 window.hEditTrans = function(id) {
-    let tr = db.home.trans.find(x => x.id === id);
-    if(!tr) return;
+    let tr = db.home.trans.find(x => x.id === id); if(!tr) return;
     let html = `<div id="m-edit-h-trans" class="modal-overlay" style="z-index: 30000; animation: fadeIn 0.2s;">
     <div class="panel" style="width:100%; max-width:380px; background: #09090b; border-color:var(--info);">
         <h3 style="margin-top:0; color:var(--info);">Edytuj operację</h3>
         <div class="inp-group"><label>Kwota (zł)</label><input type="number" step="0.01" id="eht-v" value="${tr.v}"></div>
         <div class="inp-group"><label>Data operacji</label><input type="date" id="eht-d" value="${tr.rD.split('T')[0]}"></div>
-        <button class="btn btn-success" style="margin-top:15px; padding:15px;" onclick="window.hSaveEditTrans(${id})">ZAPISZ ZMIANY</button>
+        <button class="btn btn-success" style="margin-top:15px; padding:15px;" onclick="window.hSaveEditTrans('${id}')">ZAPISZ ZMIANY</button>
         <button class="btn" style="background:transparent; color:var(--muted); box-shadow:none; border:1px solid rgba(255,255,255,0.1); margin-top:5px;" onclick="document.getElementById('m-edit-h-trans').remove()">ANULUJ</button>
-    </div></div>`;
-    document.body.insertAdjacentHTML('beforeend', html);
+    </div></div>`; document.body.insertAdjacentHTML('beforeend', html);
 };
-
 window.hSaveEditTrans = function(id) {
-    let tr = db.home.trans.find(x => x.id === id);
-    if(tr) {
-        let nv = window.safeVal('eht-v');
-        let nd = document.getElementById('eht-d').value;
-        if(nv > 0 && nd) {
-            tr.v = nv;
-            let dObj = new Date(nd);
-            dObj.setHours(12,0,0);
-            tr.rD = dObj.toISOString();
-            tr.dt = dObj.toLocaleDateString('pl-PL');
-            tr.isPlanned = nd > window.getLocalYMD(); 
-            db.home.trans.sort((a,b) => new Date(b.rD) - new Date(a.rD));
-            window.save(); window.render();
-        }
-    }
+    let tr = db.home.trans.find(x => x.id == id);
+    if(tr) { let nv = window.safeVal('eht-v'); let nd = document.getElementById('eht-d').value;
+        if(nv > 0 && nd) { tr.v = nv; let dObj = new Date(nd); dObj.setHours(12,0,0); tr.rD = dObj.toISOString(); tr.dt = dObj.toLocaleDateString('pl-PL'); tr.isPlanned = nd > window.getLocalYMD(); db.home.trans.sort((a,b) => new Date(b.rD) - new Date(a.rD)); window.save(); window.render(); } }
     document.getElementById('m-edit-h-trans').remove();
 };
 
+window.hUseTemplate = function(v, c, note) {
+    document.getElementById('h-v').value = v; window.hSelCat = c;
+    let dEl = document.getElementById('h-d'); if(dEl) dEl.value = note;
+    window.hCheckLimit(); window.render();
+}
+
+window.hCheckLimit = function() {
+    let vEl = document.getElementById('h-v'); let warnEl = document.getElementById('h-warn-limit');
+    if(!vEl || !warnEl || window.hTransType !== 'exp') { if(warnEl) warnEl.style.display = 'none'; return; }
+    let v = parseFloat(vEl.value) || 0; let cat = window.hSelCat;
+    if(db.home.budgets && db.home.budgets[cat] && v > 0) {
+        let limit = db.home.budgets[cat]; let spent = 0; let now = new Date();
+        db.home.trans.forEach(x => { if(!x.isPlanned && x.type==='exp' && x.cat===cat && new Date(x.rD).getMonth()===now.getMonth()) spent += x.v; });
+        if((spent + v) > limit) {
+            warnEl.innerHTML = `⚠️ Uwaga: Ten wydatek przekroczy limit kategorii o <strong>${((spent+v)-limit).toFixed(0)} zł</strong>!`;
+            warnEl.style.display = 'block'; return;
+        }
+    }
+    warnEl.style.display = 'none';
+}
 
 window.hAction = function() { 
     let el = document.getElementById('h-v'); 
-    if(!el || !el.value) { 
-        if(el) { el.style.borderBottom = '2px solid red'; el.classList.add('shake-anim'); setTimeout(()=>el.classList.remove('shake-anim'), 300); } 
-        return window.sysAlert("Brak kwoty", "Wpisz kwotę."); 
-    } 
-    let v = parseFloat(el.value); 
-    let dEl = document.getElementById('h-d'); 
-    let d = dEl ? dEl.value : ''; 
-    let who = window.hMem || db.home.members[0]; 
-    let dVal = document.getElementById('h-date') ? document.getElementById('h-date').value : ''; 
-    let todayYMD = window.getLocalYMD();
-    let isPlannedTrans = dVal > todayYMD; 
-    let dObj = dVal ? new Date(dVal) : new Date(); 
-    if(dVal) dObj.setHours(12,0,0); 
+    if(!el || !el.value) { if(el) { el.style.borderBottom = '2px solid red'; el.classList.add('shake-anim'); setTimeout(()=>el.classList.remove('shake-anim'), 300); } return window.sysAlert("Brak kwoty", "Wpisz kwotę."); } 
+    let v = parseFloat(el.value); let dEl = document.getElementById('h-d'); let d = dEl ? dEl.value : ''; 
+    let who = window.hMem || db.home.members[0]; let dVal = document.getElementById('h-date') ? document.getElementById('h-date').value : ''; 
+    let todayYMD = window.getLocalYMD(); let isPlannedTrans = dVal > todayYMD; 
+    let dObj = dVal ? new Date(dVal) : new Date(); if(dVal) dObj.setHours(12,0,0); 
 
     if(window.hTransType === 'transfer') { 
-        let fAcc = document.getElementById('h-acc-from').value; 
-        let tAcc = document.getElementById('h-acc-to').value; 
-        if(fAcc === tAcc) return window.sysAlert("Błąd Przelewu", "Wybierz 2 różne konta."); 
+        let fAcc = window.hSelAccFrom; let tAcc = window.hSelAccTo; 
+        if(!fAcc || !tAcc || fAcc === tAcc) return window.sysAlert("Błąd Przelewu", "Wybierz 2 różne konta."); 
         db.home.trans.push({id:Date.now(), type:'transfer', fromAcc:fAcc, toAcc:tAcc, d, v, who, dt:dObj.toLocaleDateString('pl-PL'), rD:dObj.toISOString(), isPlanned: isPlannedTrans}); 
     } else { 
-        let acc = document.getElementById('h-acc').value; 
-        let c = window.hSelCat; 
+        let acc = window.hSelAcc || db.home.accs[0].id; let c = window.hSelCat; 
         db.home.trans.push({id:Date.now(), type:window.hTransType, cat:c, acc:acc, d, v, who, dt:dObj.toLocaleDateString('pl-PL'), rD:dObj.toISOString(), isPlanned: isPlannedTrans}); 
     } 
-    db.home.trans.sort((a,b) => new Date(b.rD) - new Date(a.rD)); 
-    save(); 
-    db.tab='dash'; 
-    render(); 
+    db.home.trans.sort((a,b) => new Date(b.rD) - new Date(a.rD)); save(); db.tab='dash'; render(); 
 } 
 
 window.rHome = function() { 
     let h = db.home; let t = db.tab; if(!window.hMem) window.hMem = h.members[0] || db.userName;
-    
-    let needsSave = false;
-    let today = window.getLocalYMD();
-    h.trans.forEach(x => {
-        if(x.isPlanned && x.rD.split('T')[0] <= today) {
-            x.isPlanned = false;
-            needsSave = true;
-        }
-    });
+    let needsSave = false; let today = window.getLocalYMD();
+    h.trans.forEach(x => { if(x.isPlanned && x.rD.split('T')[0] <= today) { x.isPlanned = false; needsSave = true; } });
     if(needsSave) { window.save(); }
 
     let nav = `<div class="nav"><div class="nav-item ${t==='dash'?'act-home':''}" onclick="db.tab='dash';window.render()"><i>🏠</i>Przegląd</div><div class="nav-item ${t==='acc'?'act-home':''}" onclick="db.tab='acc';window.render()"><i>💳</i>Zarządzaj</div><div class="nav-item" style="transform:translateY(-15px);"><div style="background:var(--life); width:50px; height:50px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto; box-shadow:0 5px 15px rgba(20,184,166,0.4); color:#000; font-size:1.8rem;" onclick="db.tab='add';window.render()">+</div></div><div class="nav-item ${t==='stats'?'act-home':''}" onclick="db.tab='stats';window.render()"><i>📊</i>Wykresy</div><div class="nav-item ${t==='cal'?'act-home':''}" onclick="db.tab='cal';window.render()"><i>📅</i>Historia</div></div>`; 
     let hdr = `<header><button class="logo" onclick="window.openSwitcher()">${STYRE_LOGO}</button><div class="header-actions"><div class="settings-btn" style="background:transparent; border:none; padding:0; display:flex; flex-direction:column; align-items:center;" onclick="db.tab='set';window.render()"><span style="font-size:1.4rem; line-height:1;">⚙️</span><span style="font-size:0.5rem; font-weight:900; color:var(--muted); text-transform:uppercase;">Ustawienia</span></div></div></header>`; 
     
-    let balances = window.hGetBal(); 
-    let globalBalance = Object.values(balances).reduce((a,b)=>a+b, 0); 
-    
+    let balances = window.hGetBal(); let globalBalance = Object.values(balances).reduce((a,b)=>a+b, 0); 
     let now = new Date(); let currExp=0; let currInc=0; let plannedSum = 0;
     
     h.trans.forEach(x => { 
         let d = new Date(x.rD); 
         if(d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear()) { 
-            if(!x.isPlanned) {
-                if(x.type==='exp') currExp += x.v; 
-                if(x.type==='inc') currInc += x.v; 
-            } else if (x.type === 'exp') {
-                plannedSum += x.v; 
-            }
+            if(!x.isPlanned) { if(x.type==='exp') currExp += x.v; if(x.type==='inc') currInc += x.v; } 
+            else if (x.type === 'exp') { plannedSum += x.v; }
         } 
     });
 
@@ -215,23 +225,26 @@ window.rHome = function() {
         </div></div>
         <div class="section-lbl" style="color:#fff; border-color:rgba(255,255,255,0.1); display:flex; justify-content:space-between; align-items:center; margin-top:20px;">Zasoby / Długi <span style="color:var(--life); cursor:pointer;" onclick="db.tab='acc';window.render()">Zarządzaj ></span></div>
         <div style="padding: 0 15px;">${h.accs.slice(0,3).map(a => `<div class="acc-card"><div style="display:flex; align-items:center; gap:12px;"><div style="font-size:1.5rem;">${a.i}</div><div><span style="color:#fff; font-weight:bold; font-size:1rem;">${a.n}</span><br><small style="color:var(--muted); font-size:0.75rem;">Zwykłe</small></div></div><strong style="color:${balances[a.id]>=0?'var(--success)':'var(--danger)'}; font-size:1.15rem;">${balances[a.id].toFixed(2)} zł</strong></div>`).join('')}</div>
+        
+        ${db.home.goals.length > 0 ? `<div class="section-lbl" style="color:var(--info); border-color:rgba(14,165,233,0.3);">Realizacja Celów</div><div style="padding: 0 15px;">${db.home.goals.slice(0,2).map(g => {
+            let spent = 0; db.home.trans.forEach(x => { if(!x.isPlanned && x.type==='exp' && x.cat===g.c) spent += x.v; });
+            let pct = Math.min((spent/g.v)*100, 100);
+            return `<div style="background:rgba(255,255,255,0.05); padding:15px; border-radius:12px; margin-bottom:10px; border-left:4px solid ${g.col};"><div style="display:flex; justify-content:space-between; margin-bottom:8px;"><div><span style="font-size:1.2rem; margin-right:5px;">${g.ico}</span><strong style="color:#fff;">${g.n}</strong></div><span style="color:var(--muted); font-size:0.8rem;">${spent.toFixed(0)} / ${g.v} zł</span></div><div style="width:100%; height:8px; background:rgba(0,0,0,0.5); border-radius:4px; overflow:hidden;"><div style="width:${pct}%; background:${g.col}; height:100%;"></div></div><div style="text-align:right; font-size:0.7rem; color:${g.col}; margin-top:5px; font-weight:bold;">${pct.toFixed(1)}%</div></div>`;
+        }).join('')}</div>` : ''}
+
         <div class="section-lbl" style="color:#fff; border-color:rgba(255,255,255,0.1);">Ostatnie i Zaplanowane</div>
         <div style="padding: 0 15px;">${[...h.trans].sort((a,b)=>new Date(b.rD)-new Date(a.rD)).slice(0,8).map(x=>{ 
-            let isExp = x.type === 'exp'; 
-            let isTrans = x.type === 'transfer'; 
+            let isExp = x.type === 'exp'; let isTrans = x.type === 'transfer'; 
             let cd = isExp ? (C_EXP[x.cat] || {c:'#ef4444',i:'💸'}) : (isTrans ? {c:'#8b5cf6',i:'🔄'} : (C_INC[x.cat] || {c:'#22c55e',i:'💵'})); 
             let accName = isTrans ? `Z ${h.accs.find(a=>a.id===x.fromAcc)?.n} na ${h.accs.find(a=>a.id===x.toAcc)?.n}` : (h.accs.find(a=>a.id===x.acc)?.n || 'Konto'); 
-            let catName = isTrans ? 'Przelew własny' : x.cat; 
-            let sign = isExp ? '-' : (isTrans ? '' : '+'); 
+            let catName = isTrans ? 'Przelew własny' : x.cat; let sign = isExp ? '-' : (isTrans ? '' : '+'); 
             let color = isExp ? 'var(--danger)' : (isTrans ? '#fff' : 'var(--success)'); 
             let opacity = x.isPlanned ? '0.6' : '1';
             let planLbl = x.isPlanned ? `<span style="color:var(--warning); font-size:0.65rem; border:1px solid var(--warning); padding:1px 4px; border-radius:4px; margin-left:6px; white-space:nowrap;">PLAN: ${x.dt}</span>` : '';
-
-            return `<div class="log-item" style="border:none; border-bottom:1px solid rgba(255,255,255,0.05); border-radius:0; margin-bottom:0; background:transparent; padding:15px 5px; opacity:${opacity};"><div style="display:flex; align-items:center; gap:15px; flex:1;"><div style="width:45px; height:45px; border-radius:50%; background:${cd.c}22; border:1px solid ${cd.c}55; display:flex; align-items:center; justify-content:center; font-size:1.5rem; flex-shrink:0;">${cd.i}</div><div><strong style="font-size:0.95rem; color:#fff; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">${catName} ${planLbl}</strong><small style="color:var(--muted); display:block; margin-top:4px;">${accName} • ${x.isPlanned ? 'ZAPLANOWANE' : x.dt} • <span style="background:rgba(20,184,166,0.15); color:var(--life); padding:1px 4px; border-radius:4px; font-size:0.6rem;">👤 ${x.who||'Nieznany'}</span></small></div></div><div style="text-align:right;"><strong style="color:${color}; font-size:1.1rem; white-space:nowrap;">${sign}${x.v.toFixed(2)} zł</strong><div style="display:flex; gap:5px; margin-top:5px; justify-content:flex-end;"><button style="background:rgba(255,255,255,0.1); color:#fff; border:none; border-radius:6px; padding:4px 8px; cursor:pointer;" onclick="window.hEditTrans(${x.id})">✏️</button><button style="background:rgba(239,68,68,0.15); color:var(--danger); border:none; border-radius:6px; padding:4px 8px; cursor:pointer;" onclick="window.hDelTrans(${x.id})">🗑️</button></div></div></div>`; 
+            return `<div class="log-item" style="border:none; border-bottom:1px solid rgba(255,255,255,0.05); border-radius:0; margin-bottom:0; background:transparent; padding:15px 5px; opacity:${opacity};"><div style="display:flex; align-items:center; gap:15px; flex:1;"><div style="width:45px; height:45px; border-radius:50%; background:${cd.c}22; border:1px solid ${cd.c}55; display:flex; align-items:center; justify-content:center; font-size:1.5rem; flex-shrink:0;">${cd.i}</div><div><strong style="font-size:0.95rem; color:#fff; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">${catName} ${planLbl}</strong><small style="color:var(--muted); display:block; margin-top:4px;">${accName} • ${x.isPlanned ? 'ZAPLANOWANE' : x.dt} • <span style="background:rgba(20,184,166,0.15); color:var(--life); padding:1px 4px; border-radius:4px; font-size:0.6rem;">👤 ${x.who||'Nieznany'}</span></small></div></div><div style="text-align:right;"><strong style="color:${color}; font-size:1.1rem; white-space:nowrap;">${sign}${x.v.toFixed(2)} zł</strong><div style="display:flex; gap:5px; margin-top:5px; justify-content:flex-end;"><button style="background:rgba(255,255,255,0.1); color:#fff; border:none; border-radius:6px; padding:4px 8px; cursor:pointer;" onclick="window.hEditTrans('${x.id}')">✏️</button><button style="background:rgba(239,68,68,0.15); color:var(--danger); border:none; border-radius:6px; padding:4px 8px; cursor:pointer;" onclick="window.hDelTrans('${x.id}')">🗑️</button></div></div></div>`; 
         }).join('') || '<div style="text-align:center;color:var(--muted);padding:20px 0; font-size:0.8rem;">Brak operacji na koncie.</div>'}</div>` + nav; 
     } 
     
-    // --- NOWY, LUKSUSOWY WIDOK ZARZĄDZANIA KONTAMI ---
     if(t === 'acc') { 
         APP.innerHTML = hdr + `
         <div class="dash-hero" style="padding-bottom:10px;">
@@ -246,23 +259,37 @@ window.rHome = function() {
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <div style="display:flex; align-items:center; gap:15px;">
                         <div style="width:50px; height:50px; border-radius:50%; background:${a.c}22; display:flex; align-items:center; justify-content:center; font-size:1.8rem; border:1px solid ${a.c}55;">${a.i}</div>
-                        <div>
-                            <strong style="font-size:1.2rem; color:#fff;">${a.n}</strong>
-                            <small style="color:var(--muted); display:block; margin-top:2px; font-size:0.75rem;">Bieżące saldo</small>
-                        </div>
+                        <div><strong style="font-size:1.2rem; color:#fff;">${a.n}</strong><small style="color:var(--muted); display:block; margin-top:2px; font-size:0.75rem;">Bieżące saldo</small></div>
                     </div>
                     <strong style="color:${balances[a.id]>=0?'#fff':'var(--danger)'}; font-size:1.4rem;">${balances[a.id].toFixed(2)} zł</strong>
                 </div>
-                
                 <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:15px; border-top:1px dashed rgba(255,255,255,0.1); padding-top:15px;">
                     <button style="flex:1; min-width:80px; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:10px 5px; font-size:0.75rem; font-weight:bold; cursor:pointer;" onclick="window.sysPrompt('Edytuj Nazwę', 'Podaj nową nazwę dla ${a.n}:', (nv) => { if(nv) { let ac = db.home.accs.find(x=>x.id==='${a.id}'); if(ac) {ac.n=nv; window.save(); window.render();}}})">✏️ Nazwa</button>
-                    <button style="flex:1; min-width:80px; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:10px 5px; font-size:0.75rem; font-weight:bold; cursor:pointer;" onclick="window.hChangeIcon('${a.id}')">🎨 Ikona</button>
+                    <button style="flex:1; min-width:80px; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:10px 5px; font-size:0.75rem; font-weight:bold; cursor:pointer;" onclick="window.hShowIconPicker('${a.id}')">🎨 Ikona</button>
                     <button style="flex:1; min-width:80px; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:10px 5px; font-size:0.75rem; font-weight:bold; cursor:pointer;" onclick="window.sysPrompt('Saldo Początkowe', 'Wpisz nowe saldo startowe dla ${a.n}:', (nv) => { if(nv) { let ac = db.home.accs.find(x=>x.id==='${a.id}'); if(ac) {ac.startBal=parseFloat(nv)||0; window.save(); window.render();}}})">💰 Saldo</button>
                     <button style="background:rgba(239,68,68,0.15); color:var(--danger); border:1px solid rgba(239,68,68,0.3); border-radius:10px; padding:10px 15px; font-size:0.9rem; cursor:pointer;" onclick="window.hDelAcc('${a.id}')">🗑️</button>
                 </div>
             </div>`).join('')}
         </div>
         
+        <div class="section-lbl" style="color:var(--info); border-color:var(--info); margin-top:20px;">🎯 Cele i Kredyty (Zabójca Excela)</div>
+        <div class="panel" style="border-color:rgba(14,165,233,0.3);">
+            <p style="font-size:0.75rem; color:var(--muted); margin-bottom:15px;">Wpisz dużą kwotę docelową. Każdy Twój wydatek w wybranej kategorii automatycznie zasili pasek postępu!</p>
+            <button class="btn" style="background:var(--info); color:#fff; font-weight:bold; padding:15px; margin-bottom:15px;" onclick="window.hAddGoal()">+ DODAJ KREDYT LUB CEL</button>
+            <div>${db.home.goals.length === 0 ? '<div style="text-align:center; color:var(--muted); font-size:0.85rem;">Brak celów.</div>' : db.home.goals.map(g => {
+                let spent = 0; db.home.trans.forEach(x => { if(!x.isPlanned && x.type==='exp' && x.cat===g.c) spent += x.v; });
+                let pct = Math.min((spent/g.v)*100, 100);
+                return `<div style="background:rgba(255,255,255,0.05); padding:15px; border-radius:12px; margin-bottom:10px; border-left:4px solid ${g.col};">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                        <div><span style="font-size:1.2rem; margin-right:5px;">${g.ico}</span><strong style="color:#fff;">${g.n}</strong><br><small style="color:var(--muted); font-size:0.7rem;">Kategoria: ${g.c}</small></div>
+                        <div style="text-align:right;"><span style="color:var(--muted); font-size:0.8rem; display:block;">${spent.toFixed(0)} / ${g.v} zł</span><button style="background:rgba(239,68,68,0.15); color:var(--danger); border:none; padding:4px 8px; border-radius:6px; font-weight:bold; cursor:pointer; margin-top:5px; font-size:0.7rem;" onclick="window.hDelGoal(${g.id})">USUŃ</button></div>
+                    </div>
+                    <div style="width:100%; height:12px; background:rgba(0,0,0,0.5); border-radius:6px; overflow:hidden;"><div style="width:${pct}%; background:${g.col}; height:100%;"></div></div>
+                    <div style="text-align:right; font-size:0.8rem; color:${g.col}; margin-top:5px; font-weight:bold;">Zrealizowano: ${pct.toFixed(1)}%</div>
+                </div>`;
+            }).join('')}</div>
+        </div>
+
         <div class="section-lbl" style="color:var(--warning); border-color:var(--warning); margin-top:20px;">🤝 Zeszyt Długów</div>
         <div class="panel" style="border-color:var(--warning);">
             <div class="mode-switch" style="margin-bottom:15px; background:rgba(0,0,0,0.5);">
@@ -279,7 +306,7 @@ window.rHome = function() {
                 <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:12px 15px; border-radius:12px; margin-bottom:10px; border-left:4px solid ${d.type === 'they_owe' ? 'var(--success)' : 'var(--danger)'};">
                     <div>
                         <strong style="color:#fff; font-size:1.1rem;">${d.person}</strong>
-                        <span style="font-size:0.75rem; color:var(--muted); display:block;">Data dodania: ${d.date}</span>
+                        <span style="font-size:0.75rem; color:var(--muted); display:block;">Dodano: ${d.date}</span>
                     </div>
                     <div style="display:flex; align-items:center; gap:15px;">
                         <strong style="color:${d.type === 'they_owe' ? 'var(--success)' : 'var(--danger)'}; font-size:1.2rem;">${d.amount.toFixed(2)} zł</strong>
@@ -290,68 +317,87 @@ window.rHome = function() {
         </div>` + nav; 
     }
 
-    if(t === 'add') { let isExp = window.hTransType === 'exp'; let isTrans = window.hTransType === 'transfer'; let col = isExp ? 'var(--danger)' : (isTrans ? 'var(--info)' : 'var(--success)'); let topBg = isExp ? 'var(--bg-exp)' : (isTrans ? 'linear-gradient(180deg, #0ea5e9 0%, #09090b 100%)' : 'var(--bg-inc)'); let todayStr = window.getLocalYMD(); let catSrc = isExp ? C_EXP : C_INC; if(!isTrans && (!window.hSelCat || !catSrc[window.hSelCat])) window.hSelCat = Object.keys(catSrc)[0]; let accOptions = h.accs.map(a => `<option value="${a.id}" ${window.hSelAcc===a.id?'selected':''}>${a.n} (${balances[a.id].toFixed(0)} zł)</option>`).join(''); let gridHtml = !isTrans ? `<div class="cat-grid">` + Object.keys(catSrc).map(k => `<div class="cat-item ${window.hSelCat===k?'active':''}" onclick="window.hSelCat='${k}'; window.render();" style="${window.hSelCat===k?`background:${catSrc[k].c}22; border-color:${catSrc[k].c};`:''}"><span class="cat-icon">${catSrc[k].i}</span><span class="cat-lbl">${k}</span></div>`).join('') + `</div>` : ''; let memChips = h.members.map(m => `<div class="chip ${window.hMem === m ? 'active' : ''}" style="${window.hMem === m ? 'background:var(--life);color:#fff;border-color:var(--life)' : 'color:var(--muted)'}" onclick="window.hMem='${m}'; window.render();">${m}</div>`).join(''); APP.innerHTML = hdr + `<div style="background: ${topBg}; padding: 20px 15px; border-bottom: 1px solid rgba(255,255,255,0.1);"><div class="mode-switch" style="background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.1);"><div class="m-btn" style="${isExp?'background:var(--danger); color:#fff;':'color:var(--muted)'}" onclick="window.hTransType='exp';window.render()">WYDATEK</div><div class="m-btn" style="${!isExp&&!isTrans?'background:var(--success); color:#fff;':'color:var(--muted)'}" onclick="window.hTransType='inc';window.render()">WPŁYW</div><div class="m-btn" style="${isTrans?'background:var(--info); color:#fff;':'color:var(--muted)'}" onclick="window.hTransType='transfer';window.render()">TRANSFER</div></div><div style="text-align:center; padding: 10px 0;"><label style="color:#fff; font-size:0.8rem; font-weight:bold; text-transform:uppercase; opacity:0.8;">Wprowadź Kwotę</label><div style="display:flex; justify-content:center; align-items:center; gap:5px; margin-top:5px;"><input type="number" id="h-v" style="background:transparent; border:none; border-bottom:2px solid #fff; color:#fff; font-size:4rem!important; font-weight:900; text-align:center; width:200px; padding:5px; outline:none;" placeholder="0"><span style="font-size:2rem; font-weight:900; color:#fff;">zł</span></div></div></div><div style="padding: 20px 15px;"><div class="form-section" style="padding:12px; margin-bottom:15px; border-color:var(--life);"><div class="fs-title" style="margin-bottom:8px; color:var(--life);">Kto wykonuje operację?</div><div class="chip-box" style="margin-bottom:0; padding-bottom:0;">${memChips}</div></div>${isTrans ? `<div class="inp-group" style="margin-bottom:15px;"><label>Z konta (Wypływ)</label><select id="h-acc-from" style="background:#18181b;">${accOptions}</select></div><div class="inp-group" style="margin-bottom:20px;"><label>Na konto (Wpływ)</label><select id="h-acc-to" style="background:#18181b;">${accOptions}</select></div>` : `<div class="inp-group" style="margin-bottom:20px;"><label>Wybierz Konto</label><select id="h-acc" onchange="window.hSelAcc=this.value" style="background:#18181b;">${accOptions}</select></div><label style="font-size:0.75rem; color:var(--muted); font-weight:800; text-transform:uppercase; margin-bottom:10px; display:block; padding-left:5px;">Wybierz Kategorię</label>${gridHtml}`}<div class="inp-group" style="margin-bottom:15px;"><label>Notatka (Opcjonalnie)</label><input type="text" id="h-d" placeholder="Wpisz krótki opis" style="background:#18181b;"></div><div class="inp-group" style="margin-bottom:20px;"><label>Data operacji</label><input type="date" id="h-date" value="${todayStr}" style="background:#18181b;"></div><button class="btn" style="background:${col}; color:#fff; font-size:1.2rem; padding:20px;" onclick="window.hAction()">${isTrans?'WYKONAJ PRZELEW':'ZAPISZ TRANSAKCJĘ'}</button></div>` + nav; } 
-    if(t === 'stats') { let now = new Date(); let cats = {}; let sumExp = 0; let sumInc = 0; let sumFixed = 0; let sumVar = 0; h.trans.forEach(x => { let d = new Date(x.rD); if(!x.isPlanned && d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear()) { if(x.type === 'exp') { if(!cats[x.cat]) cats[x.cat] = 0; cats[x.cat] += x.v; sumExp += x.v; if(FIXED_EXP_CATS.includes(x.cat)) sumFixed += x.v; else sumVar += x.v; } if(x.type === 'inc') sumInc += x.v; } }); let sortedCats = Object.keys(cats).sort((a,b) => cats[b] - cats[a]); let cLabels = sortedCats; let cData = sortedCats.map(k => cats[k]); let cColors = sortedCats.map(k => C_EXP[k] ? C_EXP[k].c : '#8b5cf6'); let catListHtml = sortedCats.map((lbl, idx) => { let val = cData[idx]; let pct = sumExp > 0 ? ((val / sumExp) * 100).toFixed(0) : 0; let color = cColors[idx]; let icon = C_EXP[lbl] ? C_EXP[lbl].i : '📦'; return `<div class="cat-list-item" style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05);"><div style="display:flex; align-items:center;"><div style="width:30px; height:30px; border-radius:50%; background:${color}22; display:flex; align-items:center; justify-content:center; margin-right:12px; font-size:1rem; border:1px solid ${color}55;">${icon}</div><span style="font-weight:bold;">${lbl}</span></div><div style="display:flex; align-items:center;"><span style="color:var(--muted);font-size:0.8rem;margin-right:10px;">${pct}%</span><span style="color:${color};font-weight:bold;">-${val.toFixed(2)} zł</span></div></div>`; }).join(''); let bilans = sumInc - sumExp; APP.innerHTML = hdr + `<div class="dash-hero" style="padding-bottom:10px;"><p>BILANS W TYM MIESIĄCU</p><h1 style="color:${bilans >= 0 ? 'var(--success)' : 'var(--danger)'}; font-size:3.5rem;">${bilans > 0 ? '+' : ''}${bilans.toFixed(2)} zł</h1></div><div class="grid-2" style="padding: 0 15px; margin-bottom: 20px;"><div class="box" style="border-color:rgba(34,197,94,0.3); background:rgba(34,197,94,0.05);"><span style="color:var(--success)">Przychody</span><strong style="color:#fff">${sumInc.toFixed(2)} zł</strong></div><div class="box" style="border-color:rgba(239,68,68,0.3); background:rgba(239,68,68,0.05);"><span style="color:var(--danger)">Wydatki</span><strong style="color:#fff">-${sumExp.toFixed(2)} zł</strong></div></div><div class="panel" style="margin-bottom:20px; border-color:var(--info);"><div class="p-title" style="color:var(--info); margin-bottom:10px;">Podział Wydatków</div><div style="display:flex; justify-content:space-between; margin-bottom:5px;"><span style="color:var(--muted); font-size:0.8rem; font-weight:bold;">Stałe opłaty: <span style="color:#f59e0b">${sumFixed.toFixed(2)} zł</span></span><span style="color:var(--muted); font-size:0.8rem; font-weight:bold;">Zmienne: <span style="color:#0ea5e9">${sumVar.toFixed(2)} zł</span></span></div><div style="width:100%; height:12px; background:rgba(255,255,255,0.1); border-radius:6px; overflow:hidden; display:flex;"><div style="width:${sumExp > 0 ? (sumFixed/sumExp)*100 : 0}%; background:#f59e0b; height:100%;"></div><div style="width:${sumExp > 0 ? (sumVar/sumExp)*100 : 0}%; background:#0ea5e9; height:100%;"></div></div><p style="font-size:0.7rem; color:var(--muted); text-align:center; margin-top:10px;">Opłaty stałe stanowią ${(sumExp > 0 ? (sumFixed/sumExp)*100 : 0).toFixed(0)}% Twoich wydatków.</p></div><div class="panel" style="padding: 20px;"><div class="p-title">Struktura Kosztów Zmiennych</div><div style="height:250px; position:relative; margin-bottom:20px;"><canvas id="h-chart"></canvas>${sumExp === 0 ? '<div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); color:var(--muted); font-size:0.9rem;">Brak danych</div>' : ''}</div><div style="border-top:1px dashed rgba(255,255,255,0.1); padding-top:10px;">${catListHtml || '<div style="text-align:center; color:var(--muted); font-size:0.85rem; padding:10px;">Brak wydatków w tym miesiącu.</div>'}</div></div>` + nav; if(sumExp > 0) { setTimeout(() => { if(window.hCh) window.hCh.destroy(); let ctx = document.getElementById('h-chart').getContext('2d'); window.hCh = new Chart(ctx, { type: 'doughnut', data: { labels: cLabels, datasets: [{ data: cData, backgroundColor: cColors, borderWidth: 0, hoverOffset: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, cutout: '75%', layout: {padding: 10} } }); }, 100); } } 
-    if(t === 'cal') { 
-        let isPlannedMode = window.hCalMode === 'planned';
+    // --- NOWY EKRAN DODAWANIA WYDATKÓW (Kompaktowy, Szablony, Strażnik) ---
+    if(t === 'add') { 
+        let isExp = window.hTransType === 'exp'; let isTrans = window.hTransType === 'transfer'; 
+        let col = isExp ? 'var(--danger)' : (isTrans ? 'var(--info)' : 'var(--success)'); 
+        let topBg = isExp ? 'var(--bg-exp)' : (isTrans ? 'linear-gradient(180deg, #0ea5e9 0%, #09090b 100%)' : 'var(--bg-inc)'); 
+        let todayStr = window.getLocalYMD(); let catSrc = isExp ? C_EXP : C_INC; 
+        if(!isTrans && (!window.hSelCat || !catSrc[window.hSelCat])) window.hSelCat = Object.keys(catSrc)[0]; 
+        if(!window.hSelAcc && h.accs.length > 0) window.hSelAcc = h.accs[0].id;
+        if(!window.hSelAccFrom && h.accs.length > 0) window.hSelAccFrom = h.accs[0].id;
+        if(!window.hSelAccTo && h.accs.length > 1) window.hSelAccTo = h.accs[1].id;
+
+        // Szablony horyzontalne
+        let templates = isExp ? [
+            {n:'Kawa', v:15, c:'Jedzenie na mieście', i:'☕'}, {n:'Paliwo', v:150, c:'Auto i Transport', i:'⛽'}, {n:'Biedronka', v:100, c:'Zakupy Spożywcze', i:'🛒'}
+        ] : [{n:'Wypłata', v:4000, c:'Wypłata z Etatu', i:'💰'}, {n:'Kieszonkowe', v:100, c:'Inne Wpływy', i:'🎁'}];
         
-        let switchHtml = `<div class="mode-switch" style="margin: 15px 15px 5px 15px;">
-            <div class="m-btn ${!isPlannedMode?'active':''}" style="${!isPlannedMode?'background:var(--success);color:#000;':''}" onclick="window.hCalMode='history'; window.render()">📅 Zrealizowane</div>
-            <div class="m-btn ${isPlannedMode?'active':''}" style="${isPlannedMode?'background:var(--warning);color:#000;':''}" onclick="window.hCalMode='planned'; window.render()">⏳ Planowane</div>
+        let tplHtml = !isTrans ? `<div style="display:flex; gap:10px; overflow-x:auto; padding-bottom:10px; margin-bottom:15px;">
+            ${templates.map(tpl => `<div onclick="window.hUseTemplate(${tpl.v}, '${tpl.c}', '${tpl.n}')" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:8px 15px; display:flex; align-items:center; gap:8px; flex-shrink:0; cursor:pointer; white-space:nowrap;"><span style="font-size:1.2rem;">${tpl.i}</span><span style="color:#fff; font-weight:bold; font-size:0.85rem;">${tpl.n}</span></div>`).join('')}
+        </div>` : '';
+
+        // Suwaki dla kont (zamiast selectów)
+        let accSlider = (selVar) => `<div style="display:flex; gap:10px; overflow-x:auto; padding-bottom:5px;">
+            ${h.accs.map(a => `<div onclick="window.${selVar}='${a.id}'; window.render()" style="background:${window[selVar]===a.id?a.c+'33':'rgba(255,255,255,0.05)'}; border:1px solid ${window[selVar]===a.id?a.c:'rgba(255,255,255,0.1)'}; border-radius:12px; padding:10px; min-width:110px; flex-shrink:0; text-align:center; cursor:pointer;"><div style="font-size:1.5rem; margin-bottom:5px;">${a.i}</div><strong style="color:#fff; font-size:0.8rem; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${a.n}</strong><small style="color:var(--muted); font-size:0.7rem;">${balances[a.id].toFixed(0)} zł</small></div>`).join('')}
         </div>`;
 
+        let gridHtml = !isTrans ? `<div class="cat-grid" style="grid-template-columns: repeat(4, 1fr); gap:8px;">` + Object.keys(catSrc).map(k => `<div class="cat-item ${window.hSelCat===k?'active':''}" onclick="window.hSelCat='${k}'; window.hCheckLimit(); window.render();" style="padding:10px 5px; ${window.hSelCat===k?`background:${catSrc[k].c}22; border-color:${catSrc[k].c};`:''}"><span class="cat-icon" style="font-size:1.5rem; margin-bottom:5px;">${catSrc[k].i}</span><span class="cat-lbl" style="font-size:0.65rem; line-height:1.1;">${k}</span></div>`).join('') + `</div>` : ''; 
+        let memChips = `<div style="display:flex; gap:8px; overflow-x:auto; padding-bottom:5px;">` + h.members.map(m => `<div class="chip ${window.hMem === m ? 'active' : ''}" style="padding:8px 16px; flex-shrink:0; ${window.hMem === m ? 'background:var(--life);color:#000;border-color:var(--life)' : 'color:var(--muted)'}" onclick="window.hMem='${m}'; window.render();">${m}</div>`).join('') + `</div>`; 
+
+        APP.innerHTML = hdr + `<div style="background: ${topBg}; padding: 20px 15px 10px; border-bottom: 1px solid rgba(255,255,255,0.1);">
+        <div class="mode-switch" style="background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.1);"><div class="m-btn" style="${isExp?'background:var(--danger); color:#fff;':'color:var(--muted)'}" onclick="window.hTransType='exp';window.render()">WYDATEK</div><div class="m-btn" style="${!isExp&&!isTrans?'background:var(--success); color:#fff;':'color:var(--muted)'}" onclick="window.hTransType='inc';window.render()">WPŁYW</div><div class="m-btn" style="${isTrans?'background:var(--info); color:#fff;':'color:var(--muted)'}" onclick="window.hTransType='transfer';window.render()">TRANSFER</div></div>
+        <div style="text-align:center; padding: 15px 0 5px;">
+            <label style="color:#fff; font-size:0.8rem; font-weight:bold; text-transform:uppercase; opacity:0.8;">Wprowadź Kwotę</label>
+            <div style="display:flex; justify-content:center; align-items:center; gap:5px; margin-top:5px;">
+                <input type="number" id="h-v" oninput="window.hCheckLimit()" style="background:transparent; border:none; border-bottom:2px solid #fff; color:#fff; font-size:4rem!important; font-weight:900; text-align:center; width:200px; padding:5px; outline:none;" placeholder="0">
+                <span style="font-size:2rem; font-weight:900; color:#fff;">zł</span>
+            </div>
+            <div id="h-warn-limit" style="display:none; color:var(--warning); font-size:0.75rem; font-weight:bold; margin-top:10px; background:rgba(245,158,11,0.15); padding:6px; border-radius:8px; border:1px solid rgba(245,158,11,0.3);"></div>
+        </div></div>
+        <div style="padding: 15px;">
+            ${tplHtml}
+            <div style="margin-bottom:15px;"><label style="font-size:0.75rem; color:var(--muted); font-weight:bold; text-transform:uppercase; display:block; margin-bottom:8px;">Kto wykonuje?</label>${memChips}</div>
+            ${isTrans ? `
+                <div style="margin-bottom:15px;"><label style="font-size:0.75rem; color:var(--danger); font-weight:bold; text-transform:uppercase; display:block; margin-bottom:8px;">Z Konta (Wypływ)</label>${accSlider('hSelAccFrom')}</div>
+                <div style="margin-bottom:15px;"><label style="font-size:0.75rem; color:var(--success); font-weight:bold; text-transform:uppercase; display:block; margin-bottom:8px;">Na Konto (Wpływ)</label>${accSlider('hSelAccTo')}</div>
+            ` : `
+                <div style="margin-bottom:15px;"><label style="font-size:0.75rem; color:var(--life); font-weight:bold; text-transform:uppercase; display:block; margin-bottom:8px;">Wybierz Konto</label>${accSlider('hSelAcc')}</div>
+                <label style="font-size:0.75rem; color:var(--muted); font-weight:bold; text-transform:uppercase; margin-bottom:8px; display:block;">Wybierz Kategorię</label>${gridHtml}
+            `}
+            <div style="display:flex; gap:10px; margin-top:15px; margin-bottom:20px;">
+                <div class="inp-group" style="flex:2; margin-bottom:0;"><input type="text" id="h-d" placeholder="Notatka (Opcjonalnie)" style="background:#18181b; padding:15px;"></div>
+                <div class="inp-group" style="flex:1; margin-bottom:0;"><input type="date" id="h-date" value="${todayStr}" style="background:#18181b; padding:15px;"></div>
+            </div>
+            <button class="btn" style="background:${col}; color:#fff; font-size:1.2rem; font-weight:900; padding:20px; box-shadow:0 10px 20px ${col}44;" onclick="window.hAction()">${isTrans?'WYKONAJ PRZELEW':'ZAPISZ TRANSAKCJĘ'}</button>
+        </div>` + nav; 
+    } 
+    
+    if(t === 'stats') { let now = new Date(); let cats = {}; let sumExp = 0; let sumInc = 0; let sumFixed = 0; let sumVar = 0; h.trans.forEach(x => { let d = new Date(x.rD); if(!x.isPlanned && d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear()) { if(x.type === 'exp') { if(!cats[x.cat]) cats[x.cat] = 0; cats[x.cat] += x.v; sumExp += x.v; if(FIXED_EXP_CATS.includes(x.cat)) sumFixed += x.v; else sumVar += x.v; } if(x.type === 'inc') sumInc += x.v; } }); let sortedCats = Object.keys(cats).sort((a,b) => cats[b] - cats[a]); let cLabels = sortedCats; let cData = sortedCats.map(k => cats[k]); let cColors = sortedCats.map(k => C_EXP[k] ? C_EXP[k].c : '#8b5cf6'); let catListHtml = sortedCats.map((lbl, idx) => { let val = cData[idx]; let pct = sumExp > 0 ? ((val / sumExp) * 100).toFixed(0) : 0; let color = cColors[idx]; let icon = C_EXP[lbl] ? C_EXP[lbl].i : '📦'; return `<div class="cat-list-item" style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05);"><div style="display:flex; align-items:center;"><div style="width:30px; height:30px; border-radius:50%; background:${color}22; display:flex; align-items:center; justify-content:center; margin-right:12px; font-size:1rem; border:1px solid ${color}55;">${icon}</div><span style="font-weight:bold;">${lbl}</span></div><div style="display:flex; align-items:center;"><span style="color:var(--muted);font-size:0.8rem;margin-right:10px;">${pct}%</span><span style="color:${color};font-weight:bold;">-${val.toFixed(2)} zł</span></div></div>`; }).join(''); let bilans = sumInc - sumExp; APP.innerHTML = hdr + `<div class="dash-hero" style="padding-bottom:10px;"><p>BILANS W TYM MIESIĄCU</p><h1 style="color:${bilans >= 0 ? 'var(--success)' : 'var(--danger)'}; font-size:3.5rem;">${bilans > 0 ? '+' : ''}${bilans.toFixed(2)} zł</h1></div><div class="grid-2" style="padding: 0 15px; margin-bottom: 20px;"><div class="box" style="border-color:rgba(34,197,94,0.3); background:rgba(34,197,94,0.05);"><span style="color:var(--success)">Przychody</span><strong style="color:#fff">${sumInc.toFixed(2)} zł</strong></div><div class="box" style="border-color:rgba(239,68,68,0.3); background:rgba(239,68,68,0.05);"><span style="color:var(--danger)">Wydatki</span><strong style="color:#fff">-${sumExp.toFixed(2)} zł</strong></div></div><div class="panel" style="margin-bottom:20px; border-color:var(--info);"><div class="p-title" style="color:var(--info); margin-bottom:10px;">Podział Wydatków</div><div style="display:flex; justify-content:space-between; margin-bottom:5px;"><span style="color:var(--muted); font-size:0.8rem; font-weight:bold;">Stałe opłaty: <span style="color:#f59e0b">${sumFixed.toFixed(2)} zł</span></span><span style="color:var(--muted); font-size:0.8rem; font-weight:bold;">Zmienne: <span style="color:#0ea5e9">${sumVar.toFixed(2)} zł</span></span></div><div style="width:100%; height:12px; background:rgba(255,255,255,0.1); border-radius:6px; overflow:hidden; display:flex;"><div style="width:${sumExp > 0 ? (sumFixed/sumExp)*100 : 0}%; background:#f59e0b; height:100%;"></div><div style="width:${sumExp > 0 ? (sumVar/sumExp)*100 : 0}%; background:#0ea5e9; height:100%;"></div></div><p style="font-size:0.7rem; color:var(--muted); text-align:center; margin-top:10px;">Opłaty stałe stanowią ${(sumExp > 0 ? (sumFixed/sumExp)*100 : 0).toFixed(0)}% Twoich wydatków.</p></div><div class="panel" style="padding: 20px;"><div class="p-title">Struktura Kosztów Zmiennych</div><div style="height:250px; position:relative; margin-bottom:20px;"><canvas id="h-chart"></canvas>${sumExp === 0 ? '<div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); color:var(--muted); font-size:0.9rem;">Brak danych</div>' : ''}</div><div style="border-top:1px dashed rgba(255,255,255,0.1); padding-top:10px;">${catListHtml || '<div style="text-align:center; color:var(--muted); font-size:0.85rem; padding:10px;">Brak wydatków w tym miesiącu.</div>'}</div></div>` + nav; if(sumExp > 0) { setTimeout(() => { if(window.hCh) window.hCh.destroy(); let ctx = document.getElementById('h-chart').getContext('2d'); window.hCh = new Chart(ctx, { type: 'doughnut', data: { labels: cLabels, datasets: [{ data: cData, backgroundColor: cColors, borderWidth: 0, hoverOffset: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, cutout: '75%', layout: {padding: 10} } }); }, 100); } } 
+    
+    if(t === 'cal') { 
+        let isPlannedMode = window.hCalMode === 'planned';
+        let switchHtml = `<div class="mode-switch" style="margin: 15px 15px 5px 15px;"><div class="m-btn ${!isPlannedMode?'active':''}" style="${!isPlannedMode?'background:var(--success);color:#000;':''}" onclick="window.hCalMode='history'; window.render()">📅 Zrealizowane</div><div class="m-btn ${isPlannedMode?'active':''}" style="${isPlannedMode?'background:var(--warning);color:#000;':''}" onclick="window.hCalMode='planned'; window.render()">⏳ Planowane</div></div>`;
         let filteredTrans = h.trans.filter(x => isPlannedMode ? x.isPlanned : !x.isPlanned);
         if(window.hHistFilter === 'inc') filteredTrans = filteredTrans.filter(x => x.type === 'inc');
         if(window.hHistFilter === 'exp') filteredTrans = filteredTrans.filter(x => x.type === 'exp');
-
         let monthlySummaryHtml = '';
         if(isPlannedMode && filteredTrans.length > 0) {
-            let mTotals = {};
-            filteredTrans.forEach(x => {
-                let dObj = new Date(x.rD);
-                let mKey = dObj.toLocaleDateString('pl-PL', {month:'long', year:'numeric'}).toUpperCase(); 
-                if(!mTotals[mKey]) mTotals[mKey] = {exp:0, inc:0};
-                if(x.type === 'exp') mTotals[mKey].exp += x.v;
-                if(x.type === 'inc') mTotals[mKey].inc += x.v;
-            });
-            monthlySummaryHtml = `<div style="padding:0 15px;">` + Object.keys(mTotals).map(k => `
-                <div style="background:rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.3); padding:12px; border-radius:12px; margin-bottom:15px; text-align:center;">
-                    <div style="color:var(--warning); font-size:0.9rem; font-weight:900; letter-spacing:1px; margin-bottom:8px;">${k}</div>
-                    <div style="display:flex; justify-content:space-around;">
-                        <div><span style="font-size:0.7rem; color:var(--muted)">Do wydania</span><br><strong style="color:var(--danger); font-size:1.1rem;">-${mTotals[k].exp.toFixed(2)} zł</strong></div>
-                        <div style="border-left:1px solid rgba(245,158,11,0.2); padding-left:15px;"><span style="font-size:0.7rem; color:var(--muted)">Spodziewany wpływ</span><br><strong style="color:var(--success); font-size:1.1rem;">+${mTotals[k].inc.toFixed(2)} zł</strong></div>
-                    </div>
-                </div>
-            `).join('') + `</div>`;
+            let mTotals = {}; filteredTrans.forEach(x => { let dObj = new Date(x.rD); let mKey = dObj.toLocaleDateString('pl-PL', {month:'long', year:'numeric'}).toUpperCase(); if(!mTotals[mKey]) mTotals[mKey] = {exp:0, inc:0}; if(x.type === 'exp') mTotals[mKey].exp += x.v; if(x.type === 'inc') mTotals[mKey].inc += x.v; });
+            monthlySummaryHtml = `<div style="padding:0 15px;">` + Object.keys(mTotals).map(k => `<div style="background:rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.3); padding:12px; border-radius:12px; margin-bottom:15px; text-align:center;"><div style="color:var(--warning); font-size:0.9rem; font-weight:900; letter-spacing:1px; margin-bottom:8px;">${k}</div><div style="display:flex; justify-content:space-around;"><div><span style="font-size:0.7rem; color:var(--muted)">Do wydania</span><br><strong style="color:var(--danger); font-size:1.1rem;">-${mTotals[k].exp.toFixed(2)} zł</strong></div><div style="border-left:1px solid rgba(245,158,11,0.2); padding-left:15px;"><span style="font-size:0.7rem; color:var(--muted)">Spodziewany wpływ</span><br><strong style="color:var(--success); font-size:1.1rem;">+${mTotals[k].inc.toFixed(2)} zł</strong></div></div></div>`).join('') + `</div>`;
         }
-
-        let groups = {}; 
-        filteredTrans.sort((a,b) => isPlannedMode ? new Date(a.rD) - new Date(b.rD) : new Date(b.rD) - new Date(a.rD))
-        .forEach(x => { if(!groups[x.dt]) groups[x.dt] = []; groups[x.dt].push(x); }); 
-        
+        let groups = {}; filteredTrans.sort((a,b) => isPlannedMode ? new Date(a.rD) - new Date(b.rD) : new Date(b.rD) - new Date(a.rD)).forEach(x => { if(!groups[x.dt]) groups[x.dt] = []; groups[x.dt].push(x); }); 
         let calHtml = Object.keys(groups).map(date => { 
-            let dayTrans = groups[date]; 
-            let dayExp = dayTrans.filter(x=>x.type==='exp').reduce((a,b)=>a+b.v, 0); 
-            let dayInc = dayTrans.filter(x=>x.type==='inc').reduce((a,b)=>a+b.v, 0); 
+            let dayTrans = groups[date]; let dayExp = dayTrans.filter(x=>x.type==='exp').reduce((a,b)=>a+b.v, 0); let dayInc = dayTrans.filter(x=>x.type==='inc').reduce((a,b)=>a+b.v, 0); 
             let itemsHtml = dayTrans.map(x => { 
-                let isExp = x.type === 'exp'; 
-                let isTrans = x.type === 'transfer'; 
-                let cd = isExp ? (C_EXP[x.cat] || {c:'#ef4444',i:'💸'}) : (isTrans ? {c:'#8b5cf6',i:'🔄'} : (C_INC[x.cat] || {c:'#22c55e',i:'💵'})); 
+                let isExp = x.type === 'exp'; let isTrans = x.type === 'transfer'; let cd = isExp ? (C_EXP[x.cat] || {c:'#ef4444',i:'💸'}) : (isTrans ? {c:'#8b5cf6',i:'🔄'} : (C_INC[x.cat] || {c:'#22c55e',i:'💵'})); 
                 let accName = isTrans ? `${h.accs.find(a=>a.id===x.fromAcc)?.n} -> ${h.accs.find(a=>a.id===x.toAcc)?.n}` : (h.accs.find(a=>a.id===x.acc)?.n || 'Konto'); 
-                let catName = isTrans ? 'Przelew' : x.cat; 
-                let planLbl = x.isPlanned ? `<span style="color:var(--warning); font-size:0.6rem; margin-left:5px;">(PLAN)</span>` : ''; 
-                return `<div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.03); opacity:${x.isPlanned?'0.7':'1'};"><div style="display:flex; align-items:center; gap:12px; flex:1;"><div style="width:35px; height:35px; border-radius:50%; background:${cd.c}22; display:flex; align-items:center; justify-content:center; font-size:1.2rem; flex-shrink:0;">${cd.i}</div><div><span style="color:#fff; font-size:0.95rem; font-weight:600; display:flex; align-items:center; flex-wrap:wrap;">${catName}${planLbl}</span><small style="color:var(--muted); font-size:0.7rem; display:block; margin-top:2px;">${accName} ${x.d ? '• '+x.d : ''}</small></div></div><div style="text-align:right;"><strong style="color:${isExp?'var(--danger)':(isTrans?'#fff':'var(--success)')}; white-space:nowrap;">${isExp?'-':(isTrans?'':'+')}${x.v.toFixed(2)} zł</strong><div style="display:flex; gap:5px; margin-top:5px; justify-content:flex-end;"><button style="background:rgba(255,255,255,0.1); color:#fff; border:none; border-radius:6px; padding:4px 8px; cursor:pointer;" onclick="window.hEditTrans(${x.id})">✏️</button><button style="background:rgba(239,68,68,0.15); color:var(--danger); border:none; border-radius:6px; padding:4px 8px; cursor:pointer;" onclick="window.hDelTrans(${x.id})">🗑️</button></div></div></div>`; 
+                let catName = isTrans ? 'Przelew' : x.cat; let planLbl = x.isPlanned ? `<span style="color:var(--warning); font-size:0.6rem; margin-left:5px;">(PLAN)</span>` : ''; 
+                return `<div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.03); opacity:${x.isPlanned?'0.7':'1'};"><div style="display:flex; align-items:center; gap:12px; flex:1;"><div style="width:35px; height:35px; border-radius:50%; background:${cd.c}22; display:flex; align-items:center; justify-content:center; font-size:1.2rem; flex-shrink:0;">${cd.i}</div><div><span style="color:#fff; font-size:0.95rem; font-weight:600; display:flex; align-items:center; flex-wrap:wrap;">${catName}${planLbl}</span><small style="color:var(--muted); font-size:0.7rem; display:block; margin-top:2px;">${accName} ${x.d ? '• '+x.d : ''}</small></div></div><div style="text-align:right;"><strong style="color:${isExp?'var(--danger)':(isTrans?'#fff':'var(--success)')}; white-space:nowrap;">${isExp?'-':(isTrans?'':'+')}${x.v.toFixed(2)} zł</strong><div style="display:flex; gap:5px; margin-top:5px; justify-content:flex-end;"><button style="background:rgba(255,255,255,0.1); color:#fff; border:none; border-radius:6px; padding:4px 8px; cursor:pointer;" onclick="window.hEditTrans('${x.id}')">✏️</button><button style="background:rgba(239,68,68,0.15); color:var(--danger); border:none; border-radius:6px; padding:4px 8px; cursor:pointer;" onclick="window.hDelTrans('${x.id}')">🗑️</button></div></div></div>`; 
             }).join(''); 
             return `<div class="date-group" style="margin-top:20px; display:flex; justify-content:space-between; font-weight:bold; font-size:0.85rem; color:var(--muted); text-transform:uppercase; padding:0 10px;"><span>${date}</span> <span><span style="color:var(--success)">+${dayInc.toFixed(0)}</span> / <span style="color:var(--danger)">-${dayExp.toFixed(0)}</span></span></div><div class="panel" style="margin-top:5px; padding:5px 15px; border-radius:12px;">${itemsHtml}</div>`; 
         }).join(''); 
-
-        let filterButtons = `
-        <div style="display:flex; gap:10px; padding: 10px 15px 15px; border-bottom:1px solid rgba(255,255,255,0.05); margin-bottom:10px;">
-            <button onclick="window.hHistFilter='all'; window.render()" style="flex:1; padding:8px; border-radius:8px; border:1px solid rgba(255,255,255,0.2); background:${window.hHistFilter==='all'?'rgba(255,255,255,0.1)':'transparent'}; color:#fff; font-size:0.8rem;">Wszystko</button>
-            <button onclick="window.hHistFilter='inc'; window.render()" style="flex:1; padding:8px; border-radius:8px; border:1px solid var(--success); background:${window.hHistFilter==='inc'?'rgba(34,197,94,0.1)':'transparent'}; color:var(--success); font-size:0.8rem;">Wpływy</button>
-            <button onclick="window.hHistFilter='exp'; window.render()" style="flex:1; padding:8px; border-radius:8px; border:1px solid var(--danger); background:${window.hHistFilter==='exp'?'rgba(239,68,68,0.1)':'transparent'}; color:var(--danger); font-size:0.8rem;">Wydatki</button>
-        </div>`;
-
+        let filterButtons = `<div style="display:flex; gap:10px; padding: 10px 15px 15px; border-bottom:1px solid rgba(255,255,255,0.05); margin-bottom:10px;"><button onclick="window.hHistFilter='all'; window.render()" style="flex:1; padding:8px; border-radius:8px; border:1px solid rgba(255,255,255,0.2); background:${window.hHistFilter==='all'?'rgba(255,255,255,0.1)':'transparent'}; color:#fff; font-size:0.8rem;">Wszystko</button><button onclick="window.hHistFilter='inc'; window.render()" style="flex:1; padding:8px; border-radius:8px; border:1px solid var(--success); background:${window.hHistFilter==='inc'?'rgba(34,197,94,0.1)':'transparent'}; color:var(--success); font-size:0.8rem;">Wpływy</button><button onclick="window.hHistFilter='exp'; window.render()" style="flex:1; padding:8px; border-radius:8px; border:1px solid var(--danger); background:${window.hHistFilter==='exp'?'rgba(239,68,68,0.1)':'transparent'}; color:var(--danger); font-size:0.8rem;">Wydatki</button></div>`;
         APP.innerHTML = hdr + `<div class="dash-hero" style="padding-bottom:0;"><p>HISTORIA I ZAPLANOWANE</p></div>${switchHtml}${filterButtons}${monthlySummaryHtml}<div style="padding:0 15px 30px;">${calHtml || '<div style="text-align:center; color:var(--muted); padding:30px;">Brak danych w tym widoku.</div>'}</div>` + nav; 
     }
     if(t === 'set') { let catSrcSet = window.hRecType === 'exp' ? C_EXP : C_INC; if(!catSrcSet[window.hRecCat]) window.hRecCat = Object.keys(catSrcSet)[0]; let accOptionsSet = h.accs.map(a => `<option value="${a.id}">${a.n}</option>`).join(''); APP.innerHTML = hdr + `<div class="dash-hero" style="padding-bottom:10px;"><p>USTAWIENIA BUDŻETU</p></div><div class="section-lbl" style="color:var(--info); border-color:var(--info);">⚙️ Automatyzacja (Stałe Koszty i Wpływy)</div><div class="panel" style="border-color:var(--info);"><p style="font-size:0.75rem; color:var(--muted); margin-bottom:15px; line-height:1.4;">Dodaj tu rachunki lub wpływy, a system sam doda je wybranego dnia każdego miesiąca!</p><div class="mode-switch" style="background:rgba(0,0,0,0.5); margin-bottom:15px;"><div class="m-btn ${window.hRecType==='exp'?'active':''}" style="${window.hRecType==='exp'?'background:var(--danger);color:#fff;':''}" onclick="window.hRecType='exp';window.render()">WYDATEK</div><div class="m-btn ${window.hRecType==='inc'?'active':''}" style="${window.hRecType==='inc'?'background:var(--success);color:#fff;':''}" onclick="window.hRecType='inc';window.render()">WPŁYW</div></div><div class="inp-row"><div class="inp-group"><label>Nazwa</label><input type="text" id="hr-name" placeholder="np. Czynsz" style="background:#000;"></div><div class="inp-group"><label>Kwota</label><input type="number" id="hr-val" placeholder="np. 2000" style="background:#000;"></div></div><div class="inp-row" style="margin-bottom:10px;"><div class="inp-group" style="flex:2;"><label>Kategoria</label><select onchange="window.hRecCat=this.value" style="background:#000;">${Object.keys(catSrcSet).map(k => `<option value="${k}" ${window.hRecCat===k?'selected':''}>${k}</option>`).join('')}</select></div><div class="inp-group" style="flex:1;"><label>Dzień m-ca</label><input type="number" id="hr-day" value="1" min="1" max="31" placeholder="1-31" style="background:#000;"></div></div><div class="inp-group" style="margin-bottom:15px;"><label>Konto docelowe</label><select id="hr-acc" onchange="window.hRecAcc=this.value" style="background:#000;">${accOptionsSet}</select></div><button class="btn" style="background:var(--info); color:#fff; padding:15px; margin-bottom:20px;" onclick="window.hAddRecurring()">DODAJ DO AUTOMATU</button><div style="border-top:1px dashed rgba(255,255,255,0.1); padding-top:15px;"><span style="font-size:0.75rem; color:var(--muted); font-weight:bold; text-transform:uppercase; margin-bottom:10px; display:block;">Twoje automaty (${h.recurring.length}):</span>${h.recurring.map(r => `<div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:10px 15px; border-radius:12px; margin-bottom:10px; border-left:4px solid ${r.t === 'exp' ? 'var(--danger)' : 'var(--success)'};"><div><strong style="color:#fff; font-size:1rem;">${r.n}</strong><span style="font-size:0.7rem; color:var(--muted); display:block;">${r.c} <strong style="color:#fff;">(Dzień: ${r.day||1})</strong></span></div><div style="display:flex; align-items:center; gap:15px;"><strong style="color:${r.t === 'exp' ? 'var(--danger)' : 'var(--success)'};">${r.v.toFixed(0)} zł</strong><button style="background:rgba(239,68,68,0.15); color:var(--danger); border:none; padding:6px 10px; border-radius:8px; font-weight:bold; cursor:pointer;" onclick="window.hDelRecurring(${r.id})">USUŃ</button></div></div>`).join('') || '<div style="color:var(--muted); font-size:0.8rem;">Brak skonfigurowanych automatów.</div>'}</div></div><div class="section-lbl" style="color:var(--life); border-color:var(--life);">👥 Członkowie Rodziny</div><div class="panel" style="border-color:rgba(20,184,166,0.3);"><div class="inp-row"><div class="inp-group"><input type="text" id="h-new-mem" placeholder="Nowy domownik"></div><button class="btn btn-home" style="width:auto; margin-top:0; padding: 0 20px;" onclick="window.hAddMem()">DODAJ</button></div><div style="margin-top:15px; border-top:1px dashed rgba(255,255,255,0.1); padding-top:15px;">${h.members.map(m => `<div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:12px 15px; border-radius:12px; margin-bottom:10px; border-left:4px solid var(--life);"><strong style="color:#fff; font-size:1.1rem;">${m}</strong>${h.members.length > 1 ? `<button style="background:rgba(239,68,68,0.15); color:var(--danger); border:none; padding:8px 12px; border-radius:8px; font-weight:bold; cursor:pointer;" onclick="window.hDelMem('${m}')">USUŃ</button>` : `<span style="color:var(--muted); font-size:0.75rem;">(Główny)</span>`}</div>`).join('')}</div></div><div class="section-lbl" style="color:var(--plan); border-color:var(--plan);">🎯 Limity i Cele miesięczne</div><div class="panel" style="border-color:var(--plan);"><div class="inp-group" style="margin-bottom:12px;"><label>Wybierz Kategorię do limitu</label><select id="hb-cat">${Object.keys(C_EXP).map(k=>`<option value="${k}">${k}</option>`).join('')}</select></div><div class="inp-row"><div class="inp-group"><label>Miesięczny Limit (zł)</label><input type="number" id="hb-val" placeholder="np. 500"></div></div><button class="btn" style="background:var(--plan); color:#fff; padding:15px;" onclick="window.hSetBudget()">USTAW LIMIT KATEGORII</button><div style="margin-top:20px;">${Object.keys(h.budgets || {}).map(k => { let limit = h.budgets[k]; let spent = 0; let now = new Date(); h.trans.forEach(x => { if(!x.isPlanned && x.type==='exp' && x.cat===k && new Date(x.rD).getMonth()===now.getMonth()) spent += x.v; }); let pct = Math.min((spent / limit) * 100, 100); let color = pct > 90 ? 'var(--danger)' : (pct > 70 ? 'var(--warning)' : 'var(--success)'); return `<div style="margin-bottom:15px;"><div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:5px;"><span>${k}</span><span style="color:${color}">Wydano: ${spent.toFixed(0)} / ${limit} zł</span></div><div style="width:100%; height:8px; background:rgba(255,255,255,0.1); border-radius:4px; overflow:hidden;"><div style="width:${pct}%; background:${color}; height:100%;"></div></div></div>`; }).join('')}</div></div>
