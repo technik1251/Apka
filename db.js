@@ -1,3 +1,4 @@
+// Copyright (c) 2026 StyreOS by Technik1251. All rights reserved.
 // ==========================================
 // PLIK 1: db.js - BAZA DANYCH I FUNKCJE GLOBALNE
 // ==========================================
