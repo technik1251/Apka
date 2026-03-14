@@ -1,5 +1,5 @@
 // ==========================================
-// PLIK 2: home.js - StyreOS 5.0 (Interfejs Bankowy, Skarbonki, Kredyty)
+// PLIK 2: home.js - StyreOS 5.1 (Naprawiony Kredyt - Poprawny Progress i Kwota Całkowita)
 // ==========================================
 const FIXED_EXP_CATS = ['Stałe opłaty / Czynsz', 'Prąd / Gaz / Woda', 'Internet i Telefon', 'Kredyt / Leasing', 'Dom i Rachunki'];
 const C_EXP = { 'Stałe opłaty / Czynsz': {c: '#f59e0b', i: '🏢'}, 'Prąd / Gaz / Woda': {c: '#0ea5e9', i: '⚡'}, 'Internet i Telefon': {c: '#8b5cf6', i: '🌐'}, 'Kredyt / Leasing': {c: '#ef4444', i: '🏦'}, 'Zakupy Spożywcze': {c: '#22c55e', i: '🛒'}, 'Dom i Rachunki': {c: '#14b8a6', i: '🏠'}, 'Auto i Transport': {c: '#f59e0b', i: '🚗'}, 'Rozrywka': {c: '#a855f7', i: '🎉'}, 'Jedzenie na mieście': {c: '#ef4444', i: '🍔'}, 'Ubrania': {c: '#ec4899', i: '👗'}, 'Zdrowie': {c: '#10b981', i: '💊'}, 'Oszczędności / Skarbonka': {c: '#10b981', i: '🐷'}, 'Inne Wydatki': {c: '#64748b', i: '📦'} };
@@ -9,7 +9,7 @@ window.hHistFilter = window.hHistFilter || 'all';
 window.hCalMode = window.hCalMode || 'history';
 window.hViewDate = window.hViewDate || new Date();
 if(!db.home.loans) db.home.loans = []; 
-if(!db.home.piggy) db.home.piggy = []; // Nowa tablica tylko na cele/skarbonki
+if(!db.home.piggy) db.home.piggy = []; 
 
 window.hGetBal = function() { 
     let b = {}; 
@@ -137,43 +137,54 @@ window.hShowIconPicker = function(accId) {
 window.hApplyIcon = function(id, ico, col) { let ac = db.home.accs.find(x => x.id === id); if(ac) { ac.i = ico; ac.c = col; window.save(); window.render(); } document.getElementById('m-icon-picker').remove(); }
 window.hDelAcc = function(id) { if(db.home.accs.length <= 1) return window.sysAlert("Błąd", "Musisz mieć min. 1 konto!"); window.sysConfirm("Usuwanie konta", "Na pewno? Znikną przypisane środki.", () => { db.home.accs = db.home.accs.filter(a => a.id !== id); window.save(); window.render(); }); }
 
-// --- SANTANDER STYLE KREDYTY ---
+// --- SANTANDER STYLE KREDYTY (NAPRAWIONE) ---
 window.hOpenLoanModal = function(id = null) {
     let ln = id ? db.home.loans.find(x => x.id == id) : null;
-    let n = ln ? ln.n : ''; let l = ln ? ln.left : ''; let r = ln ? ln.rata : ''; 
-    let i = ln ? ln.installmentsLeft : ''; let d = ln ? ln.day : 10; let p = ln ? (ln.pct||0) : '';
+    let n = ln ? ln.n : ''; 
+    let t = ln ? ln.total : ''; // Przywrócono Całkowitą kwotę
+    let l = ln ? ln.left : ''; 
+    let r = ln ? ln.rata : ''; 
+    let i = ln ? ln.installmentsLeft : ''; 
+    let d = ln ? ln.day : 10; 
+    let p = ln ? (ln.pct||0) : '';
 
     let html = `<div id="m-loan" class="modal-overlay"><div class="panel" style="width:100%; max-width:380px; background:#18181b; border:1px solid #27272a;">
         <h3 style="margin-top:0; color:#fff; display:flex; align-items:center; gap:10px;">${ln ? '✏️ Edytuj' : '🏦 Nowy'} Kredyt</h3>
         <div class="inp-group" style="margin-bottom:12px;"><label>Nazwa (np. Kredyt gotówkowy)</label><input type="text" id="ml-n" value="${n}"></div>
         <div class="inp-row" style="margin-bottom:12px;">
-            <div class="inp-group"><label>Pozostało do spłaty (zł)</label><input type="number" id="ml-left" value="${l}" placeholder="np. 6980.55"></div>
-            <div class="inp-group"><label>Oprocentowanie (%)</label><input type="number" id="ml-pct" value="${p}" placeholder="np. 14.5"></div>
+            <div class="inp-group"><label>Całkowita kwota (zł)</label><input type="number" id="ml-total" value="${t}" placeholder="np. 50000"></div>
+            <div class="inp-group"><label>Pozostało do spłaty (zł)</label><input type="number" id="ml-left" value="${l}" placeholder="np. 15000"></div>
+        </div>
+        <div class="inp-row" style="margin-bottom:12px;">
+            <div class="inp-group"><label>Rata (zł)</label><input type="number" id="ml-rata" value="${r}" placeholder="np. 1300"></div>
+            <div class="inp-group"><label>Ile rat zostało?</label><input type="number" id="ml-inst" value="${i}" placeholder="np. 13"></div>
         </div>
         <div class="inp-row" style="margin-bottom:20px;">
-            <div class="inp-group"><label>Rata (zł)</label><input type="number" id="ml-rata" value="${r}" placeholder="np. 172.26"></div>
-            <div class="inp-group"><label>Ile rat zostało?</label><input type="number" id="ml-inst" value="${i}" placeholder="np. 40"></div>
+            <div class="inp-group"><label>Oprocentowanie (%)</label><input type="number" id="ml-pct" value="${p}" placeholder="np. 14"></div>
+            <div class="inp-group"><label>Dzień spłaty (1-31)</label><input type="number" id="ml-day" value="${d}"></div>
         </div>
-        <div class="inp-group" style="margin-bottom:20px;"><label>Dzień spłaty w kalendarzu (1-31)</label><input type="number" id="ml-day" value="${d}"></div>
         <button class="btn btn-danger" onclick="window.hSaveLoan('${id||''}')">ZAPISZ KREDYT</button>
         <button class="btn" style="background:transparent; color:var(--muted); box-shadow:none; margin-top:5px;" onclick="document.getElementById('m-loan').remove()">ANULUJ</button>
     </div></div>`;
     document.body.insertAdjacentHTML('beforeend', html);
 }
+
 window.hSaveLoan = function(id) {
     let n = document.getElementById('ml-n').value; 
+    let t = parseFloat(document.getElementById('ml-total').value);
     let l = parseFloat(document.getElementById('ml-left').value);
     let p = parseFloat(document.getElementById('ml-pct').value) || 0;
     let r = parseFloat(document.getElementById('ml-rata').value);
     let i = parseInt(document.getElementById('ml-inst').value);
     let d = parseInt(document.getElementById('ml-day').value) || 10;
-    if(!n || !l || !r || !i) return window.sysAlert("Błąd", "Wypełnij poprawnie podstawowe kwoty!");
+    
+    if(!n || isNaN(t) || isNaN(l) || isNaN(r) || isNaN(i)) return window.sysAlert("Błąd", "Wypełnij poprawnie podstawowe kwoty!");
     
     if(id) {
         let ln = db.home.loans.find(x => x.id == id);
-        if(ln) { ln.n = n; ln.left = l; ln.pct = p; ln.rata = r; ln.installmentsLeft = i; ln.day = d; }
+        if(ln) { ln.n = n; ln.total = t; ln.left = l; ln.pct = p; ln.rata = r; ln.installmentsLeft = i; ln.day = d; }
     } else {
-        db.home.loans.push({id: Date.now(), n:n, left:l, pct:p, rata:r, installmentsLeft:i, day:d, lastPlanned:''});
+        db.home.loans.push({id: Date.now(), n:n, total:t, left:l, pct:p, rata:r, installmentsLeft:i, day:d, lastPlanned:''});
     }
     window.save(); window.hCheckAuto(); window.render(); document.getElementById('m-loan').remove();
 }
@@ -182,21 +193,18 @@ window.hDelLoan = function(id) { window.sysConfirm("Usuwanie", "Na pewno usuną�
 window.hPayLoanDirect = function(loanId) {
     let ln = db.home.loans.find(x => x.id == loanId);
     if(ln) {
-        // Dodajemy operację do historii na kwotę raty
         db.home.trans.unshift({ id: Date.now(), type: 'exp', cat: 'Kredyt / Leasing', v: ln.rata, d: 'Spłata raty: ' + ln.n, dt: new Date().toLocaleDateString('pl-PL'), rD: new Date().toISOString(), isPlanned: false, acc: db.home.accs[0].id });
-        // Zdejmujemy ratę z kapitału. Nie jest to 100% zbieżne z bankiem (bo bank zabiera odsetki), ale dajemy użytkownikowi możliwość ręcznej edycji w dowolnym momencie.
         ln.left -= ln.rata; ln.installmentsLeft -= 1;
         if(ln.left < 0) ln.left = 0;
         
-        // Kasujemy zaplanowaną transakcję na ten miesiąc (żeby nie wisiała w kalendarzu)
-        let today = window.getLocalYMD().substring(0,7); // YYYY-MM
+        let today = window.getLocalYMD().substring(0,7);
         db.home.trans = db.home.trans.filter(x => !(x.isPlanned && x.loanId == loanId && x.rD.startsWith(today)));
 
         window.save(); window.render(); window.sysAlert("Rata opłacona!", `Środki pobrano z głównego konta.`, "success");
     }
 }
 
-// --- NOWE: CELE OSZCZĘDNOŚCIOWE (SKARBONKI) ---
+// --- CELE OSZCZĘDNOŚCIOWE (SKARBONKI) ---
 window.hOpenPiggyModal = function() {
     let html = `<div id="m-piggy" class="modal-overlay"><div class="panel" style="width:100%; max-width:380px; background:#09090b; border-color:var(--success);">
         <h3 style="margin-top:0; color:var(--success); display:flex; align-items:center; gap:10px;">🎯 Nowy Cel Oszczędnościowy</h3>
@@ -305,14 +313,16 @@ window.rHome = function() {
 
     if(t === 'goals') {
         APP.innerHTML = hdr + `<div class="dash-hero" style="padding-bottom:10px;">
-            <p style="letter-spacing:1px; color:var(--danger)">ZOBOWIĄZANIA</p>
+            <p style="letter-spacing:1px; color:var(--danger)">TWOJE ZOBOWIĄZANIA</p>
             <h1 style="color:#fff; font-size:2.5rem; margin-bottom:20px;">Kredyty i Leasingi</h1>
             <button class="btn btn-danger" style="border-radius:12px; font-weight:900; box-shadow:0 4px 20px rgba(239,68,68,0.4); width:auto; padding:12px 25px; font-size:0.9rem;" onclick="window.hOpenLoanModal()">+ DODAJ KREDYT</button>
         </div>
         <div style="padding: 10px 15px;">
             ${db.home.loans.length === 0 ? '<div style="text-align:center; color:var(--muted); font-size:0.85rem; padding:10px 0 30px;">Brak kredytów. Ciesz się wolnością finansową! 🕊️</div>' : db.home.loans.map(l => {
-                let pct = ((l.total - l.left) / l.total) * 100;
+                let pct = 0;
+                if(l.total && l.total > 0) { pct = ((l.total - l.left) / l.total) * 100; }
                 if(pct > 100) pct = 100; if(pct < 0) pct = 0;
+                if(isNaN(pct)) pct = 0;
                 
                 return `
                 <div class="panel" style="padding:0; border:1px solid #27272a; border-radius:24px; overflow:hidden; margin-bottom:20px; background:#18181b;">
@@ -328,6 +338,9 @@ window.rHome = function() {
                         <div style="font-size:2.2rem; font-weight:900; color:#fff; margin-top:5px; letter-spacing:-1px;">${l.left.toFixed(2)} PLN</div>
                     </div>
                     <div style="padding:0 20px 15px;">
+                        <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
+                            <span style="color:var(--muted); font-size:0.85rem;">Całkowita kwota kredytu</span><strong style="color:#fff; font-size:0.9rem;">${(l.total||0).toFixed(2)} PLN</strong>
+                        </div>
                         <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
                             <span style="color:var(--muted); font-size:0.85rem;">Kwota najbliższej raty</span><strong style="color:#fff; font-size:0.9rem;">${l.rata.toFixed(2)} PLN</strong>
                         </div>
