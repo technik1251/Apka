@@ -1,12 +1,12 @@
 // ==========================================
-// PLIK 2: home.js - BUDŻET DOMOWY (Z obsługą transakcji planowanych, edycją i zakładką Planowane)
+// PLIK 2: home.js - BUDŻET DOMOWY (Premium UI, Historia, Planowane, Zarządzanie)
 // ==========================================
 const C_EXP = { 'Stałe opłaty / Czynsz': {c: '#f59e0b', i: '🏢'}, 'Prąd / Gaz / Woda': {c: '#0ea5e9', i: '⚡'}, 'Internet i Telefon': {c: '#8b5cf6', i: '🌐'}, 'Kredyt / Leasing': {c: '#ef4444', i: '🏦'}, 'Zakupy Spożywcze': {c: '#22c55e', i: '🛒'}, 'Dom i Rachunki': {c: '#14b8a6', i: '🏠'}, 'Auto i Transport': {c: '#f59e0b', i: '🚗'}, 'Rozrywka': {c: '#a855f7', i: '🎉'}, 'Jedzenie na mieście': {c: '#ef4444', i: '🍔'}, 'Ubrania': {c: '#ec4899', i: '👗'}, 'Zdrowie': {c: '#10b981', i: '💊'}, 'Oszczędności / Skarbonka': {c: '#10b981', i: '🐷'}, 'Inne Wydatki': {c: '#64748b', i: '📦'} };
 const C_INC = { 'Wypłata z Etatu': {c: '#22c55e', i: '💼'}, 'Utarg z Taxi': {c: '#3b82f6', i: '🚕'}, 'Premia / Prezent': {c: '#10b981', i: '🎁'}, 'Inne Wpływy': {c: '#14b8a6', i: '📈'} };
 const FIXED_EXP_CATS = ['Stałe opłaty / Czynsz', 'Prąd / Gaz / Woda', 'Internet i Telefon', 'Kredyt / Leasing', 'Oszczędności / Skarbonka'];
 
 window.hHistFilter = window.hHistFilter || 'all';
-window.hCalMode = window.hCalMode || 'history'; // 'history' lub 'planned'
+window.hCalMode = window.hCalMode || 'history';
 
 window.hGetBal = function() { 
     let b = {}; 
@@ -55,8 +55,8 @@ window.hAddRecurring = function() {
 window.hDelRecurring = function(id) { db.home.recurring = db.home.recurring.filter(r => r.id !== id); window.save(); window.render(); }
 window.hAddDebt = function() { let n = document.getElementById('hd-name').value; let v = parseFloat(document.getElementById('hd-val').value); if(!n || !v || v <= 0) return window.sysAlert("Błąd", "Wpisz osobę i kwotę!"); db.home.debts.push({ id: Date.now(), person: n, amount: v, type: window.hDebtType, date: new Date().toLocaleDateString('pl-PL') }); window.save(); window.render(); }
 window.hDelDebt = function(id) { db.home.debts = db.home.debts.filter(d => d.id !== id); window.save(); window.render(); }
-window.hSaveAcc = function(id) { let n = document.getElementById('edit_n_'+id).value; let b = parseFloat(document.getElementById('edit_b_'+id).value) || 0; let acc = db.home.accs.find(a => a.id === id); if(acc) { acc.n = n; acc.startBal = b; save(); render(); window.sysAlert("Sukces", "Konto zaktualizowane.", "success"); } }
 
+// --- NOWE ZARZĄDZANIE KONTAMI ---
 window.hAddNewAcc = function() { 
     window.sysPrompt("Nazwa Konta", "Wpisz nazwę (np. mBank, Skarbonka)", (n) => { 
         if(!n) return;
@@ -72,7 +72,23 @@ window.hAddNewAcc = function() {
         });
     }); 
 }
-window.hDelAcc = function(id) { if(db.home.accs.length <= 1) return window.sysAlert("Błąd", "Musisz mieć min. 1 konto!"); window.sysConfirm("Usuwanie konta", "Na pewno?", () => { db.home.accs = db.home.accs.filter(a => a.id !== id); save(); render(); }); }
+
+window.hChangeIcon = function(id) {
+    let iconOpts = "Wpisz cyfrę by zmienić:\n1 = 🏦 Bank (Fiolet)\n2 = 💵 Portfel (Zielony)\n3 = 💳 Karta (Pomarańcz)\n4 = 🐷 Skarbonka (Róż)\n5 = 📈 Inwestycje (Niebieski)";
+    window.sysPrompt("Wybierz nową Ikonę", iconOpts, (iChoice) => {
+        if(!iChoice) return;
+        let ac = db.home.accs.find(x => x.id === id);
+        if(ac) {
+            if(iChoice == '1') { ac.i = '🏦'; ac.c = '#8b5cf6'; }
+            else if(iChoice == '2') { ac.i = '💵'; ac.c = '#22c55e'; }
+            else if(iChoice == '3') { ac.i = '💳'; ac.c = '#f59e0b'; }
+            else if(iChoice == '4') { ac.i = '🐷'; ac.c = '#ec4899'; }
+            else if(iChoice == '5') { ac.i = '📈'; ac.c = '#0ea5e9'; }
+            window.save(); window.render();
+        }
+    });
+}
+window.hDelAcc = function(id) { if(db.home.accs.length <= 1) return window.sysAlert("Błąd", "Musisz mieć min. 1 konto!"); window.sysConfirm("Usuwanie konta", "Na pewno? Znikną przypisane środki.", () => { db.home.accs = db.home.accs.filter(a => a.id !== id); save(); render(); }); }
 window.hSetBudget = function() { let cat = document.getElementById('hb-cat').value; let val = parseFloat(document.getElementById('hb-val').value); if(!db.home.budgets) db.home.budgets = {}; if(val > 0) { db.home.budgets[cat] = val; window.sysAlert("Sukces", "Ustawiono limit.", "success");} else { delete db.home.budgets[cat]; } save(); render(); }
 
 // --- EDYCJA I USUWANIE TRANSAKCJI ---
@@ -87,12 +103,12 @@ window.hEditTrans = function(id) {
     let tr = db.home.trans.find(x => x.id === id);
     if(!tr) return;
     let html = `<div id="m-edit-h-trans" class="modal-overlay" style="z-index: 30000; animation: fadeIn 0.2s;">
-    <div class="panel" style="width:100%; max-width:380px; background: #09090b;">
-        <h3 style="margin-top:0;">Edytuj operację</h3>
+    <div class="panel" style="width:100%; max-width:380px; background: #09090b; border-color:var(--info);">
+        <h3 style="margin-top:0; color:var(--info);">Edytuj operację</h3>
         <div class="inp-group"><label>Kwota (zł)</label><input type="number" step="0.01" id="eht-v" value="${tr.v}"></div>
         <div class="inp-group"><label>Data operacji</label><input type="date" id="eht-d" value="${tr.rD.split('T')[0]}"></div>
         <button class="btn btn-success" style="margin-top:15px; padding:15px;" onclick="window.hSaveEditTrans(${id})">ZAPISZ ZMIANY</button>
-        <button class="btn" style="background:transparent; color:var(--muted); box-shadow:none; margin-top:5px;" onclick="document.getElementById('m-edit-h-trans').remove()">ANULUJ</button>
+        <button class="btn" style="background:transparent; color:var(--muted); box-shadow:none; border:1px solid rgba(255,255,255,0.1); margin-top:5px;" onclick="document.getElementById('m-edit-h-trans').remove()">ANULUJ</button>
     </div></div>`;
     document.body.insertAdjacentHTML('beforeend', html);
 };
@@ -108,7 +124,7 @@ window.hSaveEditTrans = function(id) {
             dObj.setHours(12,0,0);
             tr.rD = dObj.toISOString();
             tr.dt = dObj.toLocaleDateString('pl-PL');
-            tr.isPlanned = nd > window.getLocalYMD(); // Aktualizacja statusu planowanego na podstawie daty!
+            tr.isPlanned = nd > window.getLocalYMD(); 
             db.home.trans.sort((a,b) => new Date(b.rD) - new Date(a.rD));
             window.save(); window.render();
         }
@@ -207,7 +223,6 @@ window.rHome = function() {
             let accName = isTrans ? `Z ${h.accs.find(a=>a.id===x.fromAcc)?.n} na ${h.accs.find(a=>a.id===x.toAcc)?.n}` : (h.accs.find(a=>a.id===x.acc)?.n || 'Konto'); 
             let catName = isTrans ? 'Przelew własny' : x.cat; 
             let sign = isExp ? '-' : (isTrans ? '' : '+'); 
-            
             let color = isExp ? 'var(--danger)' : (isTrans ? '#fff' : 'var(--success)'); 
             let opacity = x.isPlanned ? '0.6' : '1';
             let planLbl = x.isPlanned ? `<span style="color:var(--warning); font-size:0.65rem; border:1px solid var(--warning); padding:1px 4px; border-radius:4px; margin-left:6px; white-space:nowrap;">PLAN: ${x.dt}</span>` : '';
@@ -216,7 +231,65 @@ window.rHome = function() {
         }).join('') || '<div style="text-align:center;color:var(--muted);padding:20px 0; font-size:0.8rem;">Brak operacji na koncie.</div>'}</div>` + nav; 
     } 
     
-    if(t === 'acc') { APP.innerHTML = hdr + `<div class="dash-hero" style="padding-bottom:10px;"><p>ZARZĄDZANIE KONTAMI</p><h1 style="color:#fff; font-size:3.5rem;">${globalBalance.toFixed(2)} zł</h1></div><div style="padding: 0 15px;">${h.accs.map(a => `<div class="panel" style="padding:20px; border-left:5px solid ${a.c}; background:linear-gradient(145deg, #18181b, #09090b); margin-bottom:15px;"><div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px dashed rgba(255,255,255,0.1); padding-bottom:15px; margin-bottom:15px;"><div style="display:flex; align-items:center; gap:15px;"><div style="font-size:2.5rem;">${a.i}</div><div><strong style="font-size:1.3rem;">${a.n}</strong><br><small style="color:var(--muted)">Bieżące saldo</small></div></div><strong style="color:${balances[a.id]>=0?'#fff':'var(--danger)'}; font-size:1.5rem;">${balances[a.id].toFixed(2)} zł</strong></div><div class="inp-row" style="margin-bottom:0;"><div class="inp-group"><label>Edytuj Nazwę</label><input type="text" id="edit_n_${a.id}" value="${a.n}"></div><div class="inp-group"><label>Saldo początkowe</label><input type="number" id="edit_b_${a.id}" value="${a.startBal||0}"></div></div><div style="display:flex; gap:10px; margin-top:10px;"><button class="btn btn-home" style="padding:10px; font-size:0.8rem; border-radius:10px;" onclick="window.hSaveAcc('${a.id}')">ZAPISZ ZMIANY</button><button class="btn btn-danger" style="padding:10px; font-size:0.8rem; border-radius:10px; box-shadow:none; flex:0.4;" onclick="window.hDelAcc('${a.id}')">USUŃ</button></div></div>`).join('')}<button class="btn" style="background:rgba(255,255,255,0.05); color:#fff; border:1px dashed rgba(255,255,255,0.2); margin-top:10px;" onclick="window.hAddNewAcc()">+ DODAJ NOWE KONTO</button></div><div class="section-lbl" style="color:var(--warning); border-color:var(--warning); margin-top:30px;">🤝 Zeszyt Długów</div><div class="panel" style="border-color:var(--warning);"><div class="mode-switch" style="margin-bottom:15px; background:rgba(0,0,0,0.5);"><div class="m-btn ${window.hDebtType==='they_owe'?'active':''}" style="${window.hDebtType==='they_owe'?'background:var(--success);color:#fff;':''}" onclick="window.hDebtType='they_owe';window.render()">Ktoś mi wisi</div><div class="m-btn ${window.hDebtType==='i_owe'?'active':''}" style="${window.hDebtType==='i_owe'?'background:var(--danger);color:#fff;':''}" onclick="window.hDebtType='i_owe';window.render()">Ja komuś wiszę</div></div><div class="inp-row"><div class="inp-group"><label>Kto / Od kogo?</label><input type="text" id="hd-name" placeholder="np. Jan Kowalski" style="background:#000;"></div><div class="inp-group"><label>Kwota (zł)</label><input type="number" id="hd-val" placeholder="np. 150" style="background:#000;"></div></div><button class="btn" style="background:var(--warning); color:#000; padding:15px; margin-bottom:20px;" onclick="window.hAddDebt()">ZAPISZ DŁUG DO ZESZYTU</button><div style="border-top:1px dashed rgba(255,255,255,0.1); padding-top:15px;">${h.debts.length === 0 ? '<div style="text-align:center; color:var(--muted); font-size:0.85rem;">Brak długów.</div>' : h.debts.map(d => `<div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:12px 15px; border-radius:12px; margin-bottom:10px; border-left:4px solid ${d.type === 'they_owe' ? 'var(--success)' : 'var(--danger)'};"><div><strong style="color:#fff; font-size:1.1rem;">${d.person}</strong><span style="font-size:0.75rem; color:var(--muted); display:block;">${d.date}</span></div><div style="display:flex; align-items:center; gap:15px;"><strong style="color:${d.type === 'they_owe' ? 'var(--success)' : 'var(--danger)'}; font-size:1.2rem;">${d.amount.toFixed(2)} zł</strong><button style="background:rgba(255,255,255,0.1); color:#fff; border:none; padding:8px 12px; border-radius:8px; font-weight:bold; cursor:pointer;" onclick="window.hDelDebt(${d.id})">SPŁACONE</button></div></div>`).join('')}</div></div>` + nav; }
+    // --- NOWY, LUKSUSOWY WIDOK ZARZĄDZANIA KONTAMI ---
+    if(t === 'acc') { 
+        APP.innerHTML = hdr + `
+        <div class="dash-hero" style="padding-bottom:10px;">
+            <p style="letter-spacing:1px;">DOSTĘPNE ŚRODKI</p>
+            <h1 style="color:#fff; font-size:3.5rem; margin-bottom:20px;">${globalBalance.toFixed(2)} zł</h1>
+            <button class="btn" style="background:linear-gradient(135deg, var(--life), #0d9488); color:#000; border-radius:12px; font-weight:900; box-shadow:0 4px 20px rgba(20,184,166,0.4); width:auto; padding:12px 25px; font-size:0.9rem; letter-spacing:0.5px;" onclick="window.hAddNewAcc()">+ UTWÓRZ NOWE KONTO</button>
+        </div>
+        
+        <div style="padding: 10px 15px;">
+            ${h.accs.map(a => `
+            <div class="panel" style="padding:15px; border-left:4px solid ${a.c}; background:linear-gradient(145deg, #18181b, #09090b); margin-bottom:15px; border-radius:16px; box-shadow:0 4px 15px rgba(0,0,0,0.5);">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div style="display:flex; align-items:center; gap:15px;">
+                        <div style="width:50px; height:50px; border-radius:50%; background:${a.c}22; display:flex; align-items:center; justify-content:center; font-size:1.8rem; border:1px solid ${a.c}55;">${a.i}</div>
+                        <div>
+                            <strong style="font-size:1.2rem; color:#fff;">${a.n}</strong>
+                            <small style="color:var(--muted); display:block; margin-top:2px; font-size:0.75rem;">Bieżące saldo</small>
+                        </div>
+                    </div>
+                    <strong style="color:${balances[a.id]>=0?'#fff':'var(--danger)'}; font-size:1.4rem;">${balances[a.id].toFixed(2)} zł</strong>
+                </div>
+                
+                <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:15px; border-top:1px dashed rgba(255,255,255,0.1); padding-top:15px;">
+                    <button style="flex:1; min-width:80px; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:10px 5px; font-size:0.75rem; font-weight:bold; cursor:pointer;" onclick="window.sysPrompt('Edytuj Nazwę', 'Podaj nową nazwę dla ${a.n}:', (nv) => { if(nv) { let ac = db.home.accs.find(x=>x.id==='${a.id}'); if(ac) {ac.n=nv; window.save(); window.render();}}})">✏️ Nazwa</button>
+                    <button style="flex:1; min-width:80px; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:10px 5px; font-size:0.75rem; font-weight:bold; cursor:pointer;" onclick="window.hChangeIcon('${a.id}')">🎨 Ikona</button>
+                    <button style="flex:1; min-width:80px; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:10px 5px; font-size:0.75rem; font-weight:bold; cursor:pointer;" onclick="window.sysPrompt('Saldo Początkowe', 'Wpisz nowe saldo startowe dla ${a.n}:', (nv) => { if(nv) { let ac = db.home.accs.find(x=>x.id==='${a.id}'); if(ac) {ac.startBal=parseFloat(nv)||0; window.save(); window.render();}}})">💰 Saldo</button>
+                    <button style="background:rgba(239,68,68,0.15); color:var(--danger); border:1px solid rgba(239,68,68,0.3); border-radius:10px; padding:10px 15px; font-size:0.9rem; cursor:pointer;" onclick="window.hDelAcc('${a.id}')">🗑️</button>
+                </div>
+            </div>`).join('')}
+        </div>
+        
+        <div class="section-lbl" style="color:var(--warning); border-color:var(--warning); margin-top:20px;">🤝 Zeszyt Długów</div>
+        <div class="panel" style="border-color:var(--warning);">
+            <div class="mode-switch" style="margin-bottom:15px; background:rgba(0,0,0,0.5);">
+                <div class="m-btn ${window.hDebtType==='they_owe'?'active':''}" style="${window.hDebtType==='they_owe'?'background:var(--success);color:#000;':''}" onclick="window.hDebtType='they_owe';window.render()">Ktoś mi wisi</div>
+                <div class="m-btn ${window.hDebtType==='i_owe'?'active':''}" style="${window.hDebtType==='i_owe'?'background:var(--danger);color:#000;':''}" onclick="window.hDebtType='i_owe';window.render()">Ja komuś wiszę</div>
+            </div>
+            <div class="inp-row">
+                <div class="inp-group"><label>Kto / Od kogo?</label><input type="text" id="hd-name" placeholder="np. Jan Kowalski" style="background:#000;"></div>
+                <div class="inp-group"><label>Kwota (zł)</label><input type="number" id="hd-val" placeholder="np. 150" style="background:#000;"></div>
+            </div>
+            <button class="btn" style="background:var(--warning); color:#000; padding:15px; margin-bottom:20px; font-weight:900;" onclick="window.hAddDebt()">ZAPISZ DŁUG DO ZESZYTU</button>
+            <div style="border-top:1px dashed rgba(255,255,255,0.1); padding-top:15px;">
+                ${h.debts.length === 0 ? '<div style="text-align:center; color:var(--muted); font-size:0.85rem;">Brak wpisów w zeszycie.</div>' : h.debts.map(d => `
+                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:12px 15px; border-radius:12px; margin-bottom:10px; border-left:4px solid ${d.type === 'they_owe' ? 'var(--success)' : 'var(--danger)'};">
+                    <div>
+                        <strong style="color:#fff; font-size:1.1rem;">${d.person}</strong>
+                        <span style="font-size:0.75rem; color:var(--muted); display:block;">Data dodania: ${d.date}</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:15px;">
+                        <strong style="color:${d.type === 'they_owe' ? 'var(--success)' : 'var(--danger)'}; font-size:1.2rem;">${d.amount.toFixed(2)} zł</strong>
+                        <button style="background:rgba(255,255,255,0.1); color:#fff; border:none; padding:8px 12px; border-radius:8px; font-weight:bold; cursor:pointer;" onclick="window.hDelDebt(${d.id})">SPŁACONE</button>
+                    </div>
+                </div>`).join('')}
+            </div>
+        </div>` + nav; 
+    }
+
     if(t === 'add') { let isExp = window.hTransType === 'exp'; let isTrans = window.hTransType === 'transfer'; let col = isExp ? 'var(--danger)' : (isTrans ? 'var(--info)' : 'var(--success)'); let topBg = isExp ? 'var(--bg-exp)' : (isTrans ? 'linear-gradient(180deg, #0ea5e9 0%, #09090b 100%)' : 'var(--bg-inc)'); let todayStr = window.getLocalYMD(); let catSrc = isExp ? C_EXP : C_INC; if(!isTrans && (!window.hSelCat || !catSrc[window.hSelCat])) window.hSelCat = Object.keys(catSrc)[0]; let accOptions = h.accs.map(a => `<option value="${a.id}" ${window.hSelAcc===a.id?'selected':''}>${a.n} (${balances[a.id].toFixed(0)} zł)</option>`).join(''); let gridHtml = !isTrans ? `<div class="cat-grid">` + Object.keys(catSrc).map(k => `<div class="cat-item ${window.hSelCat===k?'active':''}" onclick="window.hSelCat='${k}'; window.render();" style="${window.hSelCat===k?`background:${catSrc[k].c}22; border-color:${catSrc[k].c};`:''}"><span class="cat-icon">${catSrc[k].i}</span><span class="cat-lbl">${k}</span></div>`).join('') + `</div>` : ''; let memChips = h.members.map(m => `<div class="chip ${window.hMem === m ? 'active' : ''}" style="${window.hMem === m ? 'background:var(--life);color:#fff;border-color:var(--life)' : 'color:var(--muted)'}" onclick="window.hMem='${m}'; window.render();">${m}</div>`).join(''); APP.innerHTML = hdr + `<div style="background: ${topBg}; padding: 20px 15px; border-bottom: 1px solid rgba(255,255,255,0.1);"><div class="mode-switch" style="background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.1);"><div class="m-btn" style="${isExp?'background:var(--danger); color:#fff;':'color:var(--muted)'}" onclick="window.hTransType='exp';window.render()">WYDATEK</div><div class="m-btn" style="${!isExp&&!isTrans?'background:var(--success); color:#fff;':'color:var(--muted)'}" onclick="window.hTransType='inc';window.render()">WPŁYW</div><div class="m-btn" style="${isTrans?'background:var(--info); color:#fff;':'color:var(--muted)'}" onclick="window.hTransType='transfer';window.render()">TRANSFER</div></div><div style="text-align:center; padding: 10px 0;"><label style="color:#fff; font-size:0.8rem; font-weight:bold; text-transform:uppercase; opacity:0.8;">Wprowadź Kwotę</label><div style="display:flex; justify-content:center; align-items:center; gap:5px; margin-top:5px;"><input type="number" id="h-v" style="background:transparent; border:none; border-bottom:2px solid #fff; color:#fff; font-size:4rem!important; font-weight:900; text-align:center; width:200px; padding:5px; outline:none;" placeholder="0"><span style="font-size:2rem; font-weight:900; color:#fff;">zł</span></div></div></div><div style="padding: 20px 15px;"><div class="form-section" style="padding:12px; margin-bottom:15px; border-color:var(--life);"><div class="fs-title" style="margin-bottom:8px; color:var(--life);">Kto wykonuje operację?</div><div class="chip-box" style="margin-bottom:0; padding-bottom:0;">${memChips}</div></div>${isTrans ? `<div class="inp-group" style="margin-bottom:15px;"><label>Z konta (Wypływ)</label><select id="h-acc-from" style="background:#18181b;">${accOptions}</select></div><div class="inp-group" style="margin-bottom:20px;"><label>Na konto (Wpływ)</label><select id="h-acc-to" style="background:#18181b;">${accOptions}</select></div>` : `<div class="inp-group" style="margin-bottom:20px;"><label>Wybierz Konto</label><select id="h-acc" onchange="window.hSelAcc=this.value" style="background:#18181b;">${accOptions}</select></div><label style="font-size:0.75rem; color:var(--muted); font-weight:800; text-transform:uppercase; margin-bottom:10px; display:block; padding-left:5px;">Wybierz Kategorię</label>${gridHtml}`}<div class="inp-group" style="margin-bottom:15px;"><label>Notatka (Opcjonalnie)</label><input type="text" id="h-d" placeholder="Wpisz krótki opis" style="background:#18181b;"></div><div class="inp-group" style="margin-bottom:20px;"><label>Data operacji</label><input type="date" id="h-date" value="${todayStr}" style="background:#18181b;"></div><button class="btn" style="background:${col}; color:#fff; font-size:1.2rem; padding:20px;" onclick="window.hAction()">${isTrans?'WYKONAJ PRZELEW':'ZAPISZ TRANSAKCJĘ'}</button></div>` + nav; } 
     if(t === 'stats') { let now = new Date(); let cats = {}; let sumExp = 0; let sumInc = 0; let sumFixed = 0; let sumVar = 0; h.trans.forEach(x => { let d = new Date(x.rD); if(!x.isPlanned && d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear()) { if(x.type === 'exp') { if(!cats[x.cat]) cats[x.cat] = 0; cats[x.cat] += x.v; sumExp += x.v; if(FIXED_EXP_CATS.includes(x.cat)) sumFixed += x.v; else sumVar += x.v; } if(x.type === 'inc') sumInc += x.v; } }); let sortedCats = Object.keys(cats).sort((a,b) => cats[b] - cats[a]); let cLabels = sortedCats; let cData = sortedCats.map(k => cats[k]); let cColors = sortedCats.map(k => C_EXP[k] ? C_EXP[k].c : '#8b5cf6'); let catListHtml = sortedCats.map((lbl, idx) => { let val = cData[idx]; let pct = sumExp > 0 ? ((val / sumExp) * 100).toFixed(0) : 0; let color = cColors[idx]; let icon = C_EXP[lbl] ? C_EXP[lbl].i : '📦'; return `<div class="cat-list-item" style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05);"><div style="display:flex; align-items:center;"><div style="width:30px; height:30px; border-radius:50%; background:${color}22; display:flex; align-items:center; justify-content:center; margin-right:12px; font-size:1rem; border:1px solid ${color}55;">${icon}</div><span style="font-weight:bold;">${lbl}</span></div><div style="display:flex; align-items:center;"><span style="color:var(--muted);font-size:0.8rem;margin-right:10px;">${pct}%</span><span style="color:${color};font-weight:bold;">-${val.toFixed(2)} zł</span></div></div>`; }).join(''); let bilans = sumInc - sumExp; APP.innerHTML = hdr + `<div class="dash-hero" style="padding-bottom:10px;"><p>BILANS W TYM MIESIĄCU</p><h1 style="color:${bilans >= 0 ? 'var(--success)' : 'var(--danger)'}; font-size:3.5rem;">${bilans > 0 ? '+' : ''}${bilans.toFixed(2)} zł</h1></div><div class="grid-2" style="padding: 0 15px; margin-bottom: 20px;"><div class="box" style="border-color:rgba(34,197,94,0.3); background:rgba(34,197,94,0.05);"><span style="color:var(--success)">Przychody</span><strong style="color:#fff">${sumInc.toFixed(2)} zł</strong></div><div class="box" style="border-color:rgba(239,68,68,0.3); background:rgba(239,68,68,0.05);"><span style="color:var(--danger)">Wydatki</span><strong style="color:#fff">-${sumExp.toFixed(2)} zł</strong></div></div><div class="panel" style="margin-bottom:20px; border-color:var(--info);"><div class="p-title" style="color:var(--info); margin-bottom:10px;">Podział Wydatków</div><div style="display:flex; justify-content:space-between; margin-bottom:5px;"><span style="color:var(--muted); font-size:0.8rem; font-weight:bold;">Stałe opłaty: <span style="color:#f59e0b">${sumFixed.toFixed(2)} zł</span></span><span style="color:var(--muted); font-size:0.8rem; font-weight:bold;">Zmienne: <span style="color:#0ea5e9">${sumVar.toFixed(2)} zł</span></span></div><div style="width:100%; height:12px; background:rgba(255,255,255,0.1); border-radius:6px; overflow:hidden; display:flex;"><div style="width:${sumExp > 0 ? (sumFixed/sumExp)*100 : 0}%; background:#f59e0b; height:100%;"></div><div style="width:${sumExp > 0 ? (sumVar/sumExp)*100 : 0}%; background:#0ea5e9; height:100%;"></div></div><p style="font-size:0.7rem; color:var(--muted); text-align:center; margin-top:10px;">Opłaty stałe stanowią ${(sumExp > 0 ? (sumFixed/sumExp)*100 : 0).toFixed(0)}% Twoich wydatków.</p></div><div class="panel" style="padding: 20px;"><div class="p-title">Struktura Kosztów Zmiennych</div><div style="height:250px; position:relative; margin-bottom:20px;"><canvas id="h-chart"></canvas>${sumExp === 0 ? '<div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); color:var(--muted); font-size:0.9rem;">Brak danych</div>' : ''}</div><div style="border-top:1px dashed rgba(255,255,255,0.1); padding-top:10px;">${catListHtml || '<div style="text-align:center; color:var(--muted); font-size:0.85rem; padding:10px;">Brak wydatków w tym miesiącu.</div>'}</div></div>` + nav; if(sumExp > 0) { setTimeout(() => { if(window.hCh) window.hCh.destroy(); let ctx = document.getElementById('h-chart').getContext('2d'); window.hCh = new Chart(ctx, { type: 'doughnut', data: { labels: cLabels, datasets: [{ data: cData, backgroundColor: cColors, borderWidth: 0, hoverOffset: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, cutout: '75%', layout: {padding: 10} } }); }, 100); } } 
     if(t === 'cal') { 
@@ -231,7 +304,6 @@ window.rHome = function() {
         if(window.hHistFilter === 'inc') filteredTrans = filteredTrans.filter(x => x.type === 'inc');
         if(window.hHistFilter === 'exp') filteredTrans = filteredTrans.filter(x => x.type === 'exp');
 
-        // Podsumowanie miesięczne dla trybu Planowane
         let monthlySummaryHtml = '';
         if(isPlannedMode && filteredTrans.length > 0) {
             let mTotals = {};
