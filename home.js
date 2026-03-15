@@ -1,5 +1,5 @@
 // ==========================================
-// PLIK 2: home.js - StyreOS 8.1 PRO (Koniec z brzydkimi oknami, Piękne Modale do Nadpłat)
+// PLIK 2: home.js - StyreOS 8.2 PRO (Pancerne Renderowanie - Odporność na stare kopie zapasowe)
 // ==========================================
 const FIXED_EXP_CATS = ['Stałe opłaty / Czynsz', 'Prąd / Gaz / Woda', 'Internet i Telefon', 'Kredyt / Leasing', 'Dom i Rachunki'];
 const C_EXP = { 'Stałe opłaty / Czynsz': {c: '#f59e0b', i: '🏢'}, 'Prąd / Gaz / Woda': {c: '#0ea5e9', i: '⚡'}, 'Internet i Telefon': {c: '#8b5cf6', i: '🌐'}, 'Kredyt / Leasing': {c: '#ef4444', i: '🏦'}, 'Zakupy Spożywcze': {c: '#22c55e', i: '🛒'}, 'Dom i Rachunki': {c: '#14b8a6', i: '🏠'}, 'Auto i Transport': {c: '#f59e0b', i: '🚗'}, 'Rozrywka': {c: '#a855f7', i: '🎉'}, 'Jedzenie na mieście': {c: '#ef4444', i: '🍔'}, 'Ubrania': {c: '#ec4899', i: '👗'}, 'Zdrowie': {c: '#10b981', i: '💊'}, 'Oszczędności / Skarbonka': {c: '#10b981', i: '🐷'}, 'Inne Wydatki': {c: '#64748b', i: '📦'} };
@@ -11,14 +11,16 @@ window.hViewDate = window.hViewDate || new Date();
 if(!db.home.goals) db.home.goals = [];
 if(!db.home.loans) db.home.loans = []; 
 if(!db.home.piggy) db.home.piggy = []; 
+if(!db.home.debts) db.home.debts = [];
 
 window.hGetBal = function() { 
     let b = {}; db.home.accs.forEach(a => b[a.id] = a.startBal || 0); 
     db.home.trans.forEach(x => { 
         if(!x.isPlanned) { 
-            if(x.type === 'inc' && b[x.acc] !== undefined) b[x.acc] += x.v; 
-            if(x.type === 'exp' && b[x.acc] !== undefined) b[x.acc] -= x.v; 
-            if(x.type === 'transfer') { if(b[x.fromAcc] !== undefined) b[x.fromAcc] -= x.v; if(b[x.toAcc] !== undefined) b[x.toAcc] += x.v; } 
+            let v = parseFloat(x.v) || 0;
+            if(x.type === 'inc' && b[x.acc] !== undefined) b[x.acc] += v; 
+            if(x.type === 'exp' && b[x.acc] !== undefined) b[x.acc] -= v; 
+            if(x.type === 'transfer') { if(b[x.fromAcc] !== undefined) b[x.fromAcc] -= v; if(b[x.toAcc] !== undefined) b[x.toAcc] += v; } 
         }
     }); return b; 
 }
@@ -36,10 +38,13 @@ window.hCheckAuto = function() {
     }
     if(db.home.loans) {
         db.home.loans.forEach(l => {
-            if(l.lastPlanned !== cM && l.installmentsLeft > 0) {
-                let dObj = new Date(n.getFullYear(), n.getMonth(), l.day || 10, 12, 0, 0);
-                if(cD > l.day) dObj.setMonth(dObj.getMonth() + 1);
-                db.home.trans.push({ id: 'loan_'+l.id+'_'+cM, type: 'exp', cat: 'Kredyt / Leasing', acc: db.home.accs[0].id, d: 'Rata: ' + l.n, v: l.rata, who: 'System', dt: dObj.toLocaleDateString('pl-PL'), rD: dObj.toISOString(), isPlanned: true, loanId: l.id });
+            let instLeft = parseInt(l.installmentsLeft) || 0;
+            let rata = parseFloat(l.rata) || 0;
+            if(l.lastPlanned !== cM && instLeft > 0) {
+                let day = parseInt(l.day) || 10;
+                let dObj = new Date(n.getFullYear(), n.getMonth(), day, 12, 0, 0);
+                if(cD > day) dObj.setMonth(dObj.getMonth() + 1);
+                db.home.trans.push({ id: 'loan_'+l.id+'_'+cM, type: 'exp', cat: 'Kredyt / Leasing', acc: db.home.accs[0].id, d: 'Rata: ' + l.n, v: rata, who: 'System', dt: dObj.toLocaleDateString('pl-PL'), rD: dObj.toISOString(), isPlanned: true, loanId: l.id });
                 l.lastPlanned = cM; added++;
             }
         });
@@ -55,7 +60,7 @@ window.hCheckLimit = function() {
     let v = parseFloat(vEl.value) || 0; let cat = window.hSelCat;
     if(db.home.budgets && db.home.budgets[cat] && v > 0) {
         let limit = db.home.budgets[cat]; let spent = 0; let now = new Date();
-        db.home.trans.forEach(x => { if(!x.isPlanned && x.type==='exp' && x.cat===cat && new Date(x.rD).getMonth()===now.getMonth()) spent += x.v; });
+        db.home.trans.forEach(x => { if(!x.isPlanned && x.type==='exp' && x.cat===cat && new Date(x.rD).getMonth()===now.getMonth()) spent += parseFloat(x.v)||0; });
         if((spent + v) > limit) { warnEl.innerHTML = `⚠️ Przekroczysz limit o <strong>${((spent+v)-limit).toFixed(0)} zł</strong>!`; warnEl.style.display = 'block'; return; }
     }
     warnEl.style.display = 'none';
@@ -106,7 +111,7 @@ window.hSaveEditTrans = function(id) {
 
 window.hOpenAccModal = function(id = null) {
     let ac = id ? db.home.accs.find(x => x.id === id) : null; 
-    let n = ac ? ac.n : ''; let b = ac ? ac.startBal : 0;
+    let n = ac ? ac.n : ''; let b = ac ? (parseFloat(ac.startBal)||0) : 0;
     let html = `<div id="m-acc" class="modal-overlay"><div class="panel" style="width:100%; max-width:320px; background:#09090b;">
         <h3 style="margin-top:0; color:#fff; margin-bottom:15px;">${ac ? '✏️ Konfiguruj Konto' : '🏦 Nowe Konto'}</h3>
         <div class="inp-group" style="margin-bottom:15px;"><label>Nazwa Konta</label><input type="text" id="ma-n" value="${n}" placeholder="np. mBank"></div>
@@ -135,20 +140,20 @@ window.hShowIconPicker = function(accId) {
 window.hApplyIcon = function(id, ico, col) { let ac = db.home.accs.find(x => x.id === id); if(ac) { ac.i = ico; ac.c = col; window.save(); window.render(); } document.getElementById('m-icon-picker').remove(); }
 window.hDelAcc = function(id) { if(db.home.accs.length <= 1) return window.sysAlert("Błąd", "Musisz mieć min. 1 konto!"); window.sysConfirm("Usuwanie konta", "Na pewno? Znikną przypisane środki.", () => { db.home.accs = db.home.accs.filter(a => a.id !== id); window.save(); window.render(); }); }
 
+// --- PRAWDZIWY KALKULATOR KREDYTÓW (BANKOWA MATEMATYKA) ---
 window.hOpenLoanModal = function(id = null) {
     let ln = id ? db.home.loans.find(x => x.id == id) : null;
     let n = ln ? ln.n : ''; 
-    let b = ln ? (ln.borrowed || ln.total || '') : ''; 
-    let r = ln ? ln.rata : ''; 
-    let ti = ln ? (ln.totalInst || Math.ceil((ln.left||0)/r)) : ''; 
-    let i = ln ? ln.installmentsLeft : ''; 
-    let d = ln ? ln.day : 10; 
-    let p = ln ? (ln.pct||0) : '';
-    let leftKapital = ln ? ln.kapital : '';
+    let b = ln ? (parseFloat(ln.borrowed) || parseFloat(ln.total) || '') : ''; 
+    let r = ln ? (parseFloat(ln.rata)||'') : ''; 
+    let ti = ln ? (parseInt(ln.totalInst) || Math.ceil((parseFloat(ln.left)||0)/(parseFloat(ln.rata)||1))) : ''; 
+    let i = ln ? (parseInt(ln.installmentsLeft)||'') : ''; 
+    let d = ln ? (parseInt(ln.day)||10) : 10; 
+    let p = ln ? (parseFloat(ln.pct)||0) : '';
+    let leftKapital = ln ? (parseFloat(ln.kapital) || parseFloat(ln.left) || '') : '';
 
     let html = `<div id="m-loan" class="modal-overlay"><div class="panel" style="width:100%; max-width:380px; background:#18181b; border:1px solid #27272a;">
         <h3 style="margin-top:0; color:#fff; display:flex; align-items:center; gap:10px;">${ln ? '✏️ Edytuj' : '🏦 Nowy'} Kredyt / Pożyczkę</h3>
-        
         <div class="inp-group" style="margin-bottom:12px;"><label>Nazwa (np. Kredyt Santander)</label><input type="text" id="ml-n" value="${n}"></div>
         <div class="inp-row" style="margin-bottom:12px;">
             <div class="inp-group"><label>KAPITAŁ do spłaty na dziś (zł)</label><input type="number" step="0.01" id="ml-kapital" value="${leftKapital}" placeholder="np. 6980.55"></div>
@@ -163,7 +168,6 @@ window.hOpenLoanModal = function(id = null) {
             <div class="inp-group"><label>Ile rat Zostało?</label><input type="number" id="ml-left-inst" value="${i}" placeholder="np. 56"></div>
         </div>
         <div class="inp-group" style="margin-bottom:15px; display:${id?'block':'none'};"><label>Początkowy Kapitał z Banku (opcjonalnie)</label><input type="number" id="ml-borrowed" value="${b}"></div>
-        
         <button class="btn btn-danger" onclick="window.hSaveLoan('${id||''}')">ZAPISZ KREDYT</button>
         <button class="btn" style="background:transparent; color:var(--muted); box-shadow:none; margin-top:5px;" onclick="document.getElementById('m-loan').remove()">ANULUJ</button>
     </div></div>`;
@@ -197,14 +201,18 @@ window.hDelLoan = function(id) { window.sysConfirm("Usuwanie", "Na pewno usuną�
 window.hPayLoanDirect = function(loanId) {
     let ln = db.home.loans.find(x => x.id == loanId);
     if(ln) {
-        let interest = ln.kapital * (ln.pct / 100) / 12; 
-        let principalPaid = ln.rata - interest; 
+        let kap = parseFloat(ln.kapital)||0;
+        let pct = parseFloat(ln.pct)||0;
+        let rat = parseFloat(ln.rata)||0;
+        
+        let interest = kap * (pct / 100) / 12; 
+        let principalPaid = rat - interest; 
         if(principalPaid < 0) principalPaid = 0; 
         
-        db.home.trans.unshift({ id: Date.now(), type: 'exp', cat: 'Kredyt / Leasing', v: ln.rata, d: 'Spłata raty: ' + ln.n, dt: new Date().toLocaleDateString('pl-PL'), rD: new Date().toISOString(), isPlanned: false, acc: db.home.accs[0].id });
+        db.home.trans.unshift({ id: Date.now(), type: 'exp', cat: 'Kredyt / Leasing', v: rat, d: 'Spłata raty: ' + ln.n, dt: new Date().toLocaleDateString('pl-PL'), rD: new Date().toISOString(), isPlanned: false, acc: db.home.accs[0].id });
         
-        ln.kapital -= principalPaid;
-        ln.installmentsLeft -= 1;
+        ln.kapital = kap - principalPaid;
+        ln.installmentsLeft = (parseInt(ln.installmentsLeft)||0) - 1;
         if(ln.kapital < 0) ln.kapital = 0;
         if(ln.installmentsLeft < 0) ln.installmentsLeft = 0;
         
@@ -216,7 +224,6 @@ window.hPayLoanDirect = function(loanId) {
     }
 }
 
-// --- NOWY, PIĘKNY MODAL DO NADPŁATY ---
 window.hOverpayLoan = function(loanId) {
     let ln = db.home.loans.find(x => x.id == loanId);
     if(!ln) return;
@@ -239,7 +246,8 @@ window.hSaveOverpay = function(loanId) {
     let ln = db.home.loans.find(x => x.id == loanId);
     if(ln) {
         db.home.trans.unshift({ id: Date.now(), type: 'exp', cat: 'Kredyt / Leasing', v: val, d: 'Nadpłata kapitału: ' + ln.n, dt: new Date().toLocaleDateString('pl-PL'), rD: new Date().toISOString(), isPlanned: false, acc: db.home.accs[0].id });
-        ln.kapital -= val;
+        let kap = parseFloat(ln.kapital)||0;
+        ln.kapital = kap - val;
         if(ln.kapital < 0) ln.kapital = 0;
         window.save(); window.render();
         window.sysAlert("Nadpłacono!", `Zmniejszyłeś kapitał o ${val.toFixed(2)} zł!`, "success");
@@ -252,6 +260,7 @@ window.hPayLoanInstallment = function(transId) {
     if(tr && tr.loanId) { window.hPayLoanDirect(tr.loanId); }
 }
 
+// --- CELE OSZCZĘDNOŚCIOWE (SKARBONKI) ---
 window.hOpenPiggyModal = function() {
     let html = `<div id="m-piggy" class="modal-overlay"><div class="panel" style="width:100%; max-width:380px; background:#09090b; border-color:var(--success);">
         <h3 style="margin-top:0; color:var(--success); display:flex; align-items:center; gap:10px;">🎯 Cel Oszczędnościowy</h3>
@@ -273,8 +282,6 @@ window.hSavePiggy = function() {
     db.home.piggy.push({id: Date.now(), n:n, target:t, saved:s});
     window.save(); window.render(); document.getElementById('m-piggy').remove();
 }
-
-// --- NOWY, PIĘKNY MODAL DO ZASILANIA SKARBONKI ---
 window.hAddFundsPiggy = function(id) {
     let pg = db.home.piggy.find(x => x.id == id);
     if(!pg) return;
@@ -296,14 +303,14 @@ window.hSaveFundsPiggy = function(id) {
     if(!val || val <= 0) return window.sysAlert("Błąd", "Wpisz poprawną kwotę!");
     let pg = db.home.piggy.find(x => x.id == id);
     if(pg) {
-        pg.saved += val; 
+        pg.saved = (parseFloat(pg.saved)||0) + val; 
         window.save(); window.render();
     }
     document.getElementById('m-add-funds').remove();
 }
-
 window.hDelPiggy = function(id) { window.sysConfirm("Usuwanie", "Na pewno usunąć ten cel?", () => { db.home.piggy = db.home.piggy.filter(x => x.id != id); window.save(); window.render(); }); }
 
+// --- DŁUGI ---
 window.hAddDebt = function() { 
     let n = document.getElementById('hd-name').value; let v = parseFloat(document.getElementById('hd-val').value); 
     if(!n || !v || v <= 0) return window.sysAlert("Błąd", "Wpisz osobę i kwotę!"); 
@@ -329,12 +336,14 @@ window.hAddRecurring = function() { let n = document.getElementById('hr-name').v
 window.hDelRecurring = function(id) { db.home.recurring = db.home.recurring.filter(r => r.id !== id); window.save(); window.render(); }
 window.hSetBudget = function() { let cat = document.getElementById('hb-cat').value; let val = parseFloat(document.getElementById('hb-val').value); if(!db.home.budgets) db.home.budgets = {}; if(val > 0) { db.home.budgets[cat] = val; window.sysAlert("Sukces", "Ustawiono limit.", "success");} else { delete db.home.budgets[cat]; } window.save(); window.render(); }
 
+// --- GŁÓWNY RENDER ---
 window.rHome = function() { 
     let h = db.home; let t = db.tab; if(!window.hMem) window.hMem = h.members[0] || db.userName;
     let needsSave = false; let today = window.getLocalYMD();
     h.trans.forEach(x => { if(x.isPlanned && !x.loanId && x.rD.split('T')[0] <= today) { x.isPlanned = false; needsSave = true; } });
     
-    h.loans.forEach(l => { if(l.kapital === undefined) { l.kapital = l.left; } });
+    // Migracja pancernego wyliczania
+    h.loans.forEach(l => { if(l.kapital === undefined) { l.kapital = parseFloat(l.left)||0; } });
     if(needsSave) { window.save(); }
 
     let nav = `<div class="nav"><div class="nav-item ${t==='dash'?'act-home':''}" onclick="db.tab='dash';window.render()"><i>🏠</i>Przegląd</div><div class="nav-item ${t==='goals'?'act-home':''}" onclick="db.tab='goals';window.render()"><i>🏦</i>Zobowiązania</div><div class="nav-item" style="transform:translateY(-15px);"><div style="background:var(--life); width:50px; height:50px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto; box-shadow:0 5px 15px rgba(20,184,166,0.4); color:#000; font-size:1.8rem;" onclick="db.tab='add';window.render()">+</div></div><div class="nav-item ${t==='stats'?'act-home':''}" onclick="db.tab='stats';window.render()"><i>📊</i>Wykresy</div><div class="nav-item ${t==='cal'?'act-home':''}" onclick="db.tab='cal';window.render()"><i>📅</i>Historia</div></div>`; 
@@ -347,9 +356,10 @@ window.rHome = function() {
     let now = new Date(); let currExp=0; let currInc=0; let plannedSum = 0;
     h.trans.forEach(x => { 
         let d = new Date(x.rD); 
+        let v = parseFloat(x.v)||0;
         if(d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear()) { 
-            if(!x.isPlanned) { if(x.type==='exp') currExp += x.v; if(x.type==='inc') currInc += x.v; } 
-            else if (x.type === 'exp') { plannedSum += x.v; }
+            if(!x.isPlanned) { if(x.type==='exp') currExp += v; if(x.type==='inc') currInc += v; } 
+            else if (x.type === 'exp') { plannedSum += v; }
         } 
     });
 
@@ -370,6 +380,7 @@ window.rHome = function() {
         </div></div>
         <div class="section-lbl" style="color:#fff; border-color:rgba(255,255,255,0.1); display:flex; justify-content:space-between; align-items:center; margin-top:20px;">Ostatnie i Zaplanowane</div>
         <div style="padding: 0 15px;">${[...h.trans].sort((a,b)=>new Date(b.rD)-new Date(a.rD)).slice(0,8).map(x=>{ 
+            let v = parseFloat(x.v)||0;
             let isExp = x.type === 'exp'; let isTrans = x.type === 'transfer'; 
             let cd = isExp ? (C_EXP[x.cat] || {c:'#ef4444',i:'💸'}) : (isTrans ? {c:'#8b5cf6',i:'🔄'} : (C_INC[x.cat] || {c:'#22c55e',i:'💵'})); 
             let accName = isTrans ? `Z ${h.accs.find(a=>a.id===x.fromAcc)?.n} na ${h.accs.find(a=>a.id===x.toAcc)?.n}` : (h.accs.find(a=>a.id===x.acc)?.n || 'Konto'); 
@@ -377,7 +388,7 @@ window.rHome = function() {
             let color = isExp ? 'var(--danger)' : (isTrans ? '#fff' : 'var(--success)'); 
             let opacity = x.isPlanned ? '0.6' : '1';
             let planLbl = x.isPlanned ? `<span style="color:var(--warning); font-size:0.65rem; border:1px solid var(--warning); padding:1px 4px; border-radius:4px; margin-left:6px; white-space:nowrap;">PLAN: ${x.dt}</span>` : '';
-            return `<div class="log-item" style="border:none; border-bottom:1px solid rgba(255,255,255,0.05); border-radius:0; margin-bottom:0; background:transparent; padding:15px 5px; opacity:${opacity}; flex-direction:column; align-items:stretch;"><div style="display:flex; justify-content:space-between; align-items:center; width:100%;"><div style="display:flex; align-items:center; gap:15px; flex:1;"><div style="width:45px; height:45px; border-radius:50%; background:${cd.c}22; border:1px solid ${cd.c}55; display:flex; align-items:center; justify-content:center; font-size:1.5rem; flex-shrink:0;">${cd.i}</div><div><strong style="font-size:0.95rem; color:#fff; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">${catName} ${planLbl}</strong><small style="color:var(--muted); display:block; margin-top:4px;">${accName} • ${x.isPlanned ? 'ZAPLANOWANE' : x.dt}</small></div></div><div style="text-align:right;"><strong style="color:${color}; font-size:1.1rem; white-space:nowrap;">${sign}${x.v.toFixed(2)} zł</strong></div></div></div>`; 
+            return `<div class="log-item" style="border:none; border-bottom:1px solid rgba(255,255,255,0.05); border-radius:0; margin-bottom:0; background:transparent; padding:15px 5px; opacity:${opacity}; flex-direction:column; align-items:stretch;"><div style="display:flex; justify-content:space-between; align-items:center; width:100%;"><div style="display:flex; align-items:center; gap:15px; flex:1;"><div style="width:45px; height:45px; border-radius:50%; background:${cd.c}22; border:1px solid ${cd.c}55; display:flex; align-items:center; justify-content:center; font-size:1.5rem; flex-shrink:0;">${cd.i}</div><div><strong style="font-size:0.95rem; color:#fff; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">${catName} ${planLbl}</strong><small style="color:var(--muted); display:block; margin-top:4px;">${accName} • ${x.isPlanned ? 'ZAPLANOWANE' : x.dt}</small></div></div><div style="text-align:right;"><strong style="color:${color}; font-size:1.1rem; white-space:nowrap;">${sign}${v.toFixed(2)} zł</strong></div></div></div>`; 
         }).join('') || '<div style="text-align:center;color:var(--muted);padding:20px 0; font-size:0.8rem;">Brak operacji na koncie.</div>'}</div>` + nav; 
     } 
 
@@ -390,13 +401,19 @@ window.rHome = function() {
         <div style="padding: 10px 15px;">
             ${db.home.loans.length === 0 ? '<div style="text-align:center; color:var(--muted); font-size:0.85rem; padding:10px 0 30px;">Brak kredytów. Ciesz się wolnością finansową! 🕊️</div>' : db.home.loans.map(l => {
                 
-                let totalCostRemaining = l.rata * l.installmentsLeft; 
-                let savings = totalCostRemaining - l.kapital; 
+                let kap = parseFloat(l.kapital); if(isNaN(kap)) kap = parseFloat(l.left)||0;
+                let rat = parseFloat(l.rata)||0;
+                let pctBank = parseFloat(l.pct)||0;
+                let instL = parseInt(l.installmentsLeft)||0;
+                let totInst = parseInt(l.totalInst)||0;
+                let bor = parseFloat(l.borrowed); if(isNaN(bor)) bor = parseFloat(l.total)||0;
+
+                let totalCostRemaining = rat * instL; 
+                let savings = totalCostRemaining - kap; 
                 
                 let pct = 0;
-                if(l.totalInst > 0) { pct = ((l.totalInst - l.installmentsLeft) / l.totalInst) * 100; }
+                if(totInst > 0) { pct = ((totInst - instL) / totInst) * 100; }
                 if(pct > 100) pct = 100; if(pct < 0) pct = 0;
-                if(isNaN(pct)) pct = 0;
                 
                 return `
                 <div class="panel" style="padding:0; border:1px solid #27272a; border-radius:24px; overflow:hidden; margin-bottom:20px; background:#18181b;">
@@ -409,21 +426,24 @@ window.rHome = function() {
                         <h3 style="margin:0 0 5px; font-size:1.2rem; color:#fff;">${l.n}</h3>
                         <div style="width:40px; height:3px; background:var(--danger); margin:0 auto 15px; border-radius:2px;"></div>
                         <span style="font-size:0.75rem; color:var(--muted); text-transform:uppercase;">KAPITAŁ POZOSTAŁY DO SPŁATY (NA DZIŚ)</span>
-                        <div style="font-size:2.2rem; font-weight:900; color:#fff; margin-top:5px; letter-spacing:-1px;">${l.kapital.toFixed(2)} PLN</div>
+                        <div style="font-size:2.2rem; font-weight:900; color:#fff; margin-top:5px; letter-spacing:-1px;">${kap.toFixed(2)} PLN</div>
                         ${savings > 0 ? `<div style="font-size:0.75rem; color:var(--success); margin-top:5px; font-weight:bold;">Spłacając całość dziś, unikasz ${savings.toFixed(2)} zł odsetek! 💸</div>` : ''}
                     </div>
                     <div style="padding:0 20px 15px;">
                         <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
+                            <span style="color:var(--muted); font-size:0.85rem;">Przyznana kwota z banku</span><strong style="color:#fff; font-size:0.9rem;">${bor.toFixed(2)} PLN</strong>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
                             <span style="color:var(--muted); font-size:0.85rem;">Całkowity koszt (Z odsetkami)</span><strong style="color:var(--danger); font-size:0.9rem;">${totalCostRemaining.toFixed(2)} PLN</strong>
                         </div>
                         <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
-                            <span style="color:var(--muted); font-size:0.85rem;">Kwota najbliższej raty</span><strong style="color:#fff; font-size:0.9rem;">${l.rata.toFixed(2)} PLN</strong>
+                            <span style="color:var(--muted); font-size:0.85rem;">Kwota najbliższej raty</span><strong style="color:#fff; font-size:0.9rem;">${rat.toFixed(2)} PLN</strong>
                         </div>
                         <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
-                            <span style="color:var(--muted); font-size:0.85rem;">Pozostało rat</span><strong style="color:#fff; font-size:0.9rem;">${l.installmentsLeft} z ${l.totalInst}</strong>
+                            <span style="color:var(--muted); font-size:0.85rem;">Pozostało rat</span><strong style="color:#fff; font-size:0.9rem;">${instL} z ${totInst}</strong>
                         </div>
                         <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
-                            <span style="color:var(--muted); font-size:0.85rem;">Dzień spłaty / Oprocentowanie</span><strong style="color:#fff; font-size:0.9rem;">${l.day} dzień / ${l.pct||0}%</strong>
+                            <span style="color:var(--muted); font-size:0.85rem;">Dzień spłaty / Oprocentowanie</span><strong style="color:#fff; font-size:0.9rem;">${l.day} dzień / ${pctBank}%</strong>
                         </div>
                         <div style="margin-top:15px;">
                             <div style="display:flex; justify-content:space-between; margin-bottom:5px; font-size:0.75rem; color:var(--muted);"><span>Progres spłaty (W ratach)</span><span style="color:var(--success); font-weight:bold;">${pct.toFixed(1)}%</span></div>
@@ -444,15 +464,18 @@ window.rHome = function() {
                 <button class="btn" style="background:linear-gradient(135deg, var(--success), #16a34a); color:#fff; border-radius:12px; font-weight:900; box-shadow:0 4px 20px rgba(34,197,94,0.4); width:auto; padding:12px 25px; font-size:0.9rem;" onclick="window.hOpenPiggyModal()">+ DODAJ CEL</button>
             </div>
             ${db.home.piggy.map(p => {
-                let pct = (p.saved / p.target) * 100; if(pct>100) pct=100;
+                let saved = parseFloat(p.saved)||0;
+                let target = parseFloat(p.target)||0;
+                let pct = target > 0 ? (saved / target) * 100 : 0; if(pct>100) pct=100;
+                
                 return `<div class="panel" style="padding:15px; border-left:4px solid var(--success); background:linear-gradient(145deg, #18181b, #09090b); margin-bottom:15px; border-radius:16px;">
                     <div style="display:flex; justify-content:space-between; margin-bottom:10px; align-items:center;">
                         <strong style="color:#fff; font-size:1.1rem;">${p.n}</strong>
                         <button style="background:rgba(239,68,68,0.15); color:var(--danger); border:none; border-radius:6px; padding:6px 10px; cursor:pointer; font-weight:bold; font-size:0.7rem;" onclick="window.hDelPiggy(${p.id})">USUŃ</button>
                     </div>
                     <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:var(--muted); margin-bottom:8px;">
-                        <span>Zgromadzono: <strong style="color:var(--success); font-size:1rem;">${p.saved.toFixed(0)} zł</strong></span>
-                        <span>Cel: ${p.target.toFixed(0)} zł</span>
+                        <span>Zgromadzono: <strong style="color:var(--success); font-size:1rem;">${saved.toFixed(0)} zł</strong></span>
+                        <span>Cel: ${target.toFixed(0)} zł</span>
                     </div>
                     <div style="width:100%; height:12px; background:rgba(0,0,0,0.5); border-radius:6px; overflow:hidden; margin-bottom:12px;"><div style="width:${pct}%; background:var(--success); height:100%;"></div></div>
                     <button style="background:rgba(34,197,94,0.15); color:var(--success); border:1px solid rgba(34,197,94,0.3); border-radius:10px; padding:10px; width:100%; font-weight:bold; cursor:pointer;" onclick="window.hAddFundsPiggy(${p.id})">+ WPŁAĆ ŚRODKI</button>
@@ -472,23 +495,28 @@ window.rHome = function() {
             </div>
             <button class="btn" style="background:var(--warning); color:#000; padding:15px; margin-bottom:20px; font-weight:900;" onclick="window.hAddDebt()">ZAPISZ DŁUG DO ZESZYTU</button>
             <div style="border-top:1px dashed rgba(255,255,255,0.1); padding-top:15px;">
-                ${h.debts.length === 0 ? '<div style="text-align:center; color:var(--muted); font-size:0.85rem;">Brak wpisów w zeszycie.</div>' : h.debts.map(d => `
-                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:12px 15px; border-radius:12px; margin-bottom:10px; border-left:4px solid ${d.type === 'they_owe' ? 'var(--success)' : 'var(--danger)'};">
-                    <div>
-                        <strong style="color:#fff; font-size:1.1rem;">${d.person}</strong>
-                        <span style="font-size:0.75rem; color:var(--muted); display:block;">Dodano: ${d.date}</span>
-                    </div>
-                    <div style="display:flex; align-items:center; gap:15px;">
-                        <strong style="color:${d.type === 'they_owe' ? 'var(--success)' : 'var(--danger)'}; font-size:1.2rem;">${d.amount.toFixed(2)} zł</strong>
-                        <button style="background:rgba(255,255,255,0.1); color:#fff; border:none; padding:8px 12px; border-radius:8px; font-weight:bold; cursor:pointer;" onclick="window.hDelDebt(${d.id})">SPŁACONE</button>
-                    </div>
-                </div>`).join('')}
+                ${h.debts.length === 0 ? '<div style="text-align:center; color:var(--muted); font-size:0.85rem;">Brak wpisów w zeszycie.</div>' : h.debts.map(d => {
+                    let amt = parseFloat(d.amount)||0;
+                    return `<div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:12px 15px; border-radius:12px; margin-bottom:10px; border-left:4px solid ${d.type === 'they_owe' ? 'var(--success)' : 'var(--danger)'};">
+                        <div>
+                            <strong style="color:#fff; font-size:1.1rem;">${d.person}</strong>
+                            <span style="font-size:0.75rem; color:var(--muted); display:block;">Dodano: ${d.date}</span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:15px;">
+                            <strong style="color:${d.type === 'they_owe' ? 'var(--success)' : 'var(--danger)'}; font-size:1.2rem;">${amt.toFixed(2)} zł</strong>
+                            <button style="background:rgba(255,255,255,0.1); color:#fff; border:none; padding:8px 12px; border-radius:8px; font-weight:bold; cursor:pointer;" onclick="window.hDelDebt(${d.id})">SPŁACONE</button>
+                        </div>
+                    </div>`;
+                }).join('')}
             </div>
         </div>` + nav;
     }
     
     if(t === 'acc') { 
-        APP.innerHTML = hdr + `<div class="dash-hero" style="padding-bottom:10px;"><p style="letter-spacing:1px; color:var(--life)">KONTA I PORTFELE</p><h1 style="color:#fff; font-size:2.5rem; margin-bottom:20px;">Zarządzanie</h1><button class="btn" style="background:linear-gradient(135deg, var(--life), #0d9488); color:#000; border-radius:12px; font-weight:900; box-shadow:0 4px 20px rgba(20,184,166,0.4); width:auto; padding:12px 25px; font-size:0.9rem;" onclick="window.hOpenAccModal()">+ DODAJ KONTO</button></div><div style="padding: 10px 15px;">${h.accs.map(a => `<div class="panel" style="padding:15px; border-left:4px solid ${a.c}; margin-bottom:15px;"><div style="display:flex; justify-content:space-between; align-items:center;"><div style="display:flex; align-items:center; gap:15px;"><div style="width:50px; height:50px; border-radius:50%; background:${a.c}22; display:flex; align-items:center; justify-content:center; font-size:1.8rem; border:1px solid ${a.c}55;">${a.i}</div><div><strong style="font-size:1.2rem; color:#fff;">${a.n}</strong><small style="color:var(--muted); display:block; margin-top:2px; font-size:0.75rem;">Bieżące saldo</small></div></div><strong style="color:${balances[a.id]>=0?'#fff':'var(--danger)'}; font-size:1.4rem;">${balances[a.id].toFixed(2)} zł</strong></div><div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:15px; border-top:1px dashed rgba(255,255,255,0.1); padding-top:15px;"><button style="flex:1; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:10px 5px; font-size:0.75rem; cursor:pointer;" onclick="window.hOpenAccModal('${a.id}')">✏️ Edytuj</button><button style="flex:1; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:10px 5px; font-size:0.75rem; cursor:pointer;" onclick="window.hShowIconPicker('${a.id}')">🎨 Ikona</button><button style="background:rgba(239,68,68,0.15); color:var(--danger); border:1px solid rgba(239,68,68,0.3); border-radius:10px; padding:10px 15px; cursor:pointer;" onclick="window.hDelAcc('${a.id}')">🗑️</button></div></div>`).join('')}</div>` + nav; 
+        APP.innerHTML = hdr + `<div class="dash-hero" style="padding-bottom:10px;"><p style="letter-spacing:1px; color:var(--life)">KONTA I PORTFELE</p><h1 style="color:#fff; font-size:2.5rem; margin-bottom:20px;">Zarządzanie</h1><button class="btn" style="background:linear-gradient(135deg, var(--life), #0d9488); color:#000; border-radius:12px; font-weight:900; box-shadow:0 4px 20px rgba(20,184,166,0.4); width:auto; padding:12px 25px; font-size:0.9rem;" onclick="window.hOpenAccModal()">+ DODAJ KONTO</button></div><div style="padding: 10px 15px;">${h.accs.map(a => {
+            let bal = parseFloat(balances[a.id])||0;
+            return `<div class="panel" style="padding:15px; border-left:4px solid ${a.c}; margin-bottom:15px;"><div style="display:flex; justify-content:space-between; align-items:center;"><div style="display:flex; align-items:center; gap:15px;"><div style="width:50px; height:50px; border-radius:50%; background:${a.c}22; display:flex; align-items:center; justify-content:center; font-size:1.8rem; border:1px solid ${a.c}55;">${a.i}</div><div><strong style="font-size:1.2rem; color:#fff;">${a.n}</strong><small style="color:var(--muted); display:block; margin-top:2px; font-size:0.75rem;">Bieżące saldo</small></div></div><strong style="color:${bal>=0?'#fff':'var(--danger)'}; font-size:1.4rem;">${bal.toFixed(2)} zł</strong></div><div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:15px; border-top:1px dashed rgba(255,255,255,0.1); padding-top:15px;"><button style="flex:1; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:10px 5px; font-size:0.75rem; cursor:pointer;" onclick="window.hOpenAccModal('${a.id}')">✏️ Edytuj</button><button style="flex:1; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:10px 5px; font-size:0.75rem; cursor:pointer;" onclick="window.hShowIconPicker('${a.id}')">🎨 Ikona</button><button style="background:rgba(239,68,68,0.15); color:var(--danger); border:1px solid rgba(239,68,68,0.3); border-radius:10px; padding:10px 15px; cursor:pointer;" onclick="window.hDelAcc('${a.id}')">🗑️</button></div></div>`;
+        }).join('')}</div>` + nav; 
     }
 
     if(t === 'add') { 
@@ -506,8 +534,8 @@ window.rHome = function() {
             let counts = {};
             db.home.trans.filter(x => x.type === window.hTransType && !x.isPlanned).forEach(x => {
                 let key = x.d + '|' + x.cat; 
-                if(!counts[key]) counts[key] = {n: x.d || x.cat, c: x.cat, v: x.v, cnt: 0};
-                counts[key].cnt++; counts[key].v = x.v;
+                if(!counts[key]) counts[key] = {n: x.d || x.cat, c: x.cat, v: parseFloat(x.v)||0, cnt: 0};
+                counts[key].cnt++; counts[key].v = parseFloat(x.v)||0;
             });
             templates = Object.values(counts).sort((a,b) => b.cnt - a.cnt).slice(0,3).map(x => {
                 return {n: x.n.substring(0,12), v: x.v, c: x.c, i: catSrc[x.c] ? catSrc[x.c].i : '💸'};
@@ -523,7 +551,10 @@ window.rHome = function() {
         </div>` : '';
 
         let accSlider = (selVar) => `<div style="display:flex; gap:10px; overflow-x:auto; padding-bottom:5px;">
-            ${h.accs.map(a => `<div onclick="window.${selVar}='${a.id}'; window.render()" style="background:${window[selVar]===a.id?a.c+'33':'rgba(255,255,255,0.05)'}; border:1px solid ${window[selVar]===a.id?a.c:'rgba(255,255,255,0.1)'}; border-radius:12px; padding:10px; min-width:110px; flex-shrink:0; text-align:center; cursor:pointer;"><div style="font-size:1.5rem; margin-bottom:5px;">${a.i}</div><strong style="color:#fff; font-size:0.8rem; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${a.n}</strong><small style="color:var(--muted); font-size:0.7rem;">${balances[a.id].toFixed(0)} zł</small></div>`).join('')}
+            ${h.accs.map(a => {
+                let bal = parseFloat(balances[a.id])||0;
+                return `<div onclick="window.${selVar}='${a.id}'; window.render()" style="background:${window[selVar]===a.id?a.c+'33':'rgba(255,255,255,0.05)'}; border:1px solid ${window[selVar]===a.id?a.c:'rgba(255,255,255,0.1)'}; border-radius:12px; padding:10px; min-width:110px; flex-shrink:0; text-align:center; cursor:pointer;"><div style="font-size:1.5rem; margin-bottom:5px;">${a.i}</div><strong style="color:#fff; font-size:0.8rem; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${a.n}</strong><small style="color:var(--muted); font-size:0.7rem;">${bal.toFixed(0)} zł</small></div>`;
+            }).join('')}
         </div>`;
 
         let gridHtml = !isTrans ? `<div class="cat-grid" style="grid-template-columns: repeat(4, 1fr); gap:8px;">` + Object.keys(catSrc).map(k => `<div class="cat-item ${window.hSelCat===k?'active':''}" onclick="window.hSelCat='${k}'; window.hCheckLimit(); window.render();" style="padding:10px 5px; ${window.hSelCat===k?`background:${catSrc[k].c}22; border-color:${catSrc[k].c};`:''}"><span class="cat-icon" style="font-size:1.5rem; margin-bottom:5px;">${catSrc[k].i}</span><span class="cat-lbl" style="font-size:0.65rem; line-height:1.1;">${k}</span></div>`).join('') + `</div>` : ''; 
@@ -558,13 +589,14 @@ window.rHome = function() {
         let sumExp = 0; let sumInc = 0; let sumFixed = 0; let sumVar = 0; 
         h.trans.forEach(x => { 
             let d = new Date(x.rD); 
+            let v = parseFloat(x.v)||0;
             if(!x.isPlanned && d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear()) { 
                 if(x.type === 'exp') { 
-                    if(!cats[x.cat]) cats[x.cat] = 0; cats[x.cat] += x.v; sumExp += x.v; 
-                    if(FIXED_EXP_CATS.includes(x.cat)) sumFixed += x.v; else sumVar += x.v; 
+                    if(!cats[x.cat]) cats[x.cat] = 0; cats[x.cat] += v; sumExp += v; 
+                    if(FIXED_EXP_CATS.includes(x.cat)) sumFixed += v; else sumVar += v; 
                 } 
                 if(x.type === 'inc') { 
-                    if(!incCats[x.cat]) incCats[x.cat] = 0; incCats[x.cat] += x.v; sumInc += x.v; 
+                    if(!incCats[x.cat]) incCats[x.cat] = 0; incCats[x.cat] += v; sumInc += v; 
                 } 
             } 
         }); 
@@ -604,7 +636,7 @@ window.rHome = function() {
         let monthlySummaryHtml = '';
         if(isPlannedMode && filteredTrans.length > 0) {
             let mExp = 0; let mInc = 0;
-            filteredTrans.forEach(x => { if(x.type === 'exp') mExp += x.v; if(x.type === 'inc') mInc += x.v; });
+            filteredTrans.forEach(x => { let v = parseFloat(x.v)||0; if(x.type === 'exp') mExp += v; if(x.type === 'inc') mInc += v; });
             monthlySummaryHtml = `<div style="padding:0 15px;">
                 <div style="background:rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.3); padding:12px; border-radius:12px; margin-bottom:15px; text-align:center;">
                     <div style="display:flex; justify-content:space-around;">
@@ -616,13 +648,16 @@ window.rHome = function() {
         
         let groups = {}; filteredTrans.sort((a,b) => isPlannedMode ? new Date(a.rD) - new Date(b.rD) : new Date(b.rD) - new Date(a.rD)).forEach(x => { if(!groups[x.dt]) groups[x.dt] = []; groups[x.dt].push(x); }); 
         let calHtml = Object.keys(groups).map(date => { 
-            let dayTrans = groups[date]; let dayExp = dayTrans.filter(x=>x.type==='exp').reduce((a,b)=>a+b.v, 0); let dayInc = dayTrans.filter(x=>x.type==='inc').reduce((a,b)=>a+b.v, 0); 
+            let dayTrans = groups[date]; 
+            let dayExp = dayTrans.filter(x=>x.type==='exp').reduce((a,b)=>a+(parseFloat(b.v)||0), 0); 
+            let dayInc = dayTrans.filter(x=>x.type==='inc').reduce((a,b)=>a+(parseFloat(b.v)||0), 0); 
             let itemsHtml = dayTrans.map(x => { 
+                let v = parseFloat(x.v)||0;
                 let isExp = x.type === 'exp'; let isTrans = x.type === 'transfer'; let cd = isExp ? (C_EXP[x.cat] || {c:'#ef4444',i:'💸'}) : (isTrans ? {c:'#8b5cf6',i:'🔄'} : (C_INC[x.cat] || {c:'#22c55e',i:'💵'})); 
                 let accName = isTrans ? `Z ${h.accs.find(a=>a.id===x.fromAcc)?.n} na ${h.accs.find(a=>a.id===x.toAcc)?.n}` : (h.accs.find(a=>a.id===x.acc)?.n || 'Konto'); 
                 let catName = isTrans ? 'Przelew' : x.cat; let planLbl = x.isPlanned ? `<span style="color:var(--warning); font-size:0.6rem; margin-left:5px;">(PLAN)</span>` : ''; 
                 
-                return `<div style="display:flex; flex-direction:column; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.03); opacity:${x.isPlanned?'0.7':'1'};"><div style="display:flex; justify-content:space-between; align-items:center; width:100%;"><div style="display:flex; align-items:center; gap:12px; flex:1;"><div style="width:35px; height:35px; border-radius:50%; background:${cd.c}22; display:flex; align-items:center; justify-content:center; font-size:1.2rem; flex-shrink:0;">${cd.i}</div><div><span style="color:#fff; font-size:0.95rem; font-weight:600; display:flex; align-items:center; flex-wrap:wrap;">${catName}${planLbl}</span><small style="color:var(--muted); font-size:0.7rem; display:block; margin-top:2px;">${accName} ${x.d ? '• '+x.d : ''}</small></div></div><div style="text-align:right;"><strong style="color:${isExp?'var(--danger)':(isTrans?'#fff':'var(--success)')}; white-space:nowrap;">${isExp?'-':(isTrans?'':'+')}${x.v.toFixed(2)} zł</strong><div style="display:flex; gap:5px; margin-top:5px; justify-content:flex-end;"><button style="background:rgba(255,255,255,0.1); color:#fff; border:none; border-radius:6px; padding:4px 8px; cursor:pointer;" onclick="window.hEditTrans('${x.id}')">✏️</button><button style="background:rgba(239,68,68,0.15); color:var(--danger); border:none; border-radius:6px; padding:4px 8px; cursor:pointer;" onclick="window.hDelTrans('${x.id}')">🗑️</button></div></div></div></div>`; 
+                return `<div style="display:flex; flex-direction:column; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.03); opacity:${x.isPlanned?'0.7':'1'};"><div style="display:flex; justify-content:space-between; align-items:center; width:100%;"><div style="display:flex; align-items:center; gap:12px; flex:1;"><div style="width:35px; height:35px; border-radius:50%; background:${cd.c}22; display:flex; align-items:center; justify-content:center; font-size:1.2rem; flex-shrink:0;">${cd.i}</div><div><span style="color:#fff; font-size:0.95rem; font-weight:600; display:flex; align-items:center; flex-wrap:wrap;">${catName}${planLbl}</span><small style="color:var(--muted); font-size:0.7rem; display:block; margin-top:2px;">${accName} ${x.d ? '• '+x.d : ''}</small></div></div><div style="text-align:right;"><strong style="color:${isExp?'var(--danger)':(isTrans?'#fff':'var(--success)')}; white-space:nowrap;">${isExp?'-':(isTrans?'':'+')}${v.toFixed(2)} zł</strong><div style="display:flex; gap:5px; margin-top:5px; justify-content:flex-end;"><button style="background:rgba(255,255,255,0.1); color:#fff; border:none; border-radius:6px; padding:4px 8px; cursor:pointer;" onclick="window.hEditTrans('${x.id}')">✏️</button><button style="background:rgba(239,68,68,0.15); color:var(--danger); border:none; border-radius:6px; padding:4px 8px; cursor:pointer;" onclick="window.hDelTrans('${x.id}')">🗑️</button></div></div></div></div>`; 
             }).join(''); 
             return `<div class="date-group" style="margin-top:20px; display:flex; justify-content:space-between; font-weight:bold; font-size:0.85rem; color:var(--muted); text-transform:uppercase; padding:0 10px;"><span>${date}</span> <span><span style="color:var(--success)">+${dayInc.toFixed(0)}</span> / <span style="color:var(--danger)">-${dayExp.toFixed(0)}</span></span></div><div class="panel" style="margin-top:5px; padding:5px 15px; border-radius:12px;">${itemsHtml}</div>`; 
         }).join(''); 
@@ -638,7 +673,7 @@ window.rHome = function() {
         APP.innerHTML = hdr + `<div class="dash-hero" style="padding-bottom:0;"><p>HISTORIA I KALENDARZ</p></div>${switchHtml}${monthNavHtml}${filterButtons}${monthlySummaryHtml}<div style="padding:0 15px 30px;">${calHtml || '<div style="text-align:center; color:var(--muted); padding:30px;">Brak operacji w tym miesiącu.</div>'}</div>` + nav; 
     }
     
-    if(t === 'set') { let catSrcSet = window.hRecType === 'exp' ? C_EXP : C_INC; if(!catSrcSet[window.hRecCat]) window.hRecCat = Object.keys(catSrcSet)[0]; let accOptionsSet = h.accs.map(a => `<option value="${a.id}">${a.n}</option>`).join(''); APP.innerHTML = hdr + `<div class="dash-hero" style="padding-bottom:10px;"><p>USTAWIENIA BUDŻETU</p></div><div class="section-lbl" style="color:var(--info); border-color:var(--info);">⚙️ Automatyzacja (Stałe Koszty i Wpływy)</div><div class="panel" style="border-color:var(--info);"><p style="font-size:0.75rem; color:var(--muted); margin-bottom:15px; line-height:1.4;">Dodaj tu rachunki lub wpływy, a system sam doda je wybranego dnia każdego miesiąca!</p><div class="mode-switch" style="background:rgba(0,0,0,0.5); margin-bottom:15px;"><div class="m-btn ${window.hRecType==='exp'?'active':''}" style="${window.hRecType==='exp'?'background:var(--danger);color:#fff;':''}" onclick="window.hRecType='exp';window.render()">WYDATEK</div><div class="m-btn ${window.hRecType==='inc'?'active':''}" style="${window.hRecType==='inc'?'background:var(--success);color:#fff;':''}" onclick="window.hRecType='inc';window.render()">WPŁYW</div></div><div class="inp-row"><div class="inp-group"><label>Nazwa</label><input type="text" id="hr-name" placeholder="np. Czynsz" style="background:#000;"></div><div class="inp-group"><label>Kwota</label><input type="number" id="hr-val" placeholder="np. 2000" style="background:#000;"></div></div><div class="inp-row" style="margin-bottom:10px;"><div class="inp-group" style="flex:2;"><label>Kategoria</label><select onchange="window.hRecCat=this.value" style="background:#000;">${Object.keys(catSrcSet).map(k => `<option value="${k}" ${window.hRecCat===k?'selected':''}>${k}</option>`).join('')}</select></div><div class="inp-group" style="flex:1;"><label>Dzień m-ca</label><input type="number" id="hr-day" value="1" min="1" max="31" placeholder="1-31" style="background:#000;"></div></div><div class="inp-group" style="margin-bottom:15px;"><label>Konto docelowe</label><select id="hr-acc" onchange="window.hRecAcc=this.value" style="background:#000;">${accOptionsSet}</select></div><button class="btn" style="background:var(--info); color:#fff; padding:15px; margin-bottom:20px;" onclick="window.hAddRecurring()">DODAJ DO AUTOMATU</button><div style="border-top:1px dashed rgba(255,255,255,0.1); padding-top:15px;"><span style="font-size:0.75rem; color:var(--muted); font-weight:bold; text-transform:uppercase; margin-bottom:10px; display:block;">Twoje automaty (${h.recurring.length}):</span>${h.recurring.map(r => `<div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:10px 15px; border-radius:12px; margin-bottom:10px; border-left:4px solid ${r.t === 'exp' ? 'var(--danger)' : 'var(--success)'};"><div><strong style="color:#fff; font-size:1rem;">${r.n}</strong><span style="font-size:0.7rem; color:var(--muted); display:block;">${r.c} <strong style="color:#fff;">(Dzień: ${r.day||1})</strong></span></div><div style="display:flex; align-items:center; gap:15px;"><strong style="color:${r.t === 'exp' ? 'var(--danger)' : 'var(--success)'};">${r.v.toFixed(0)} zł</strong><button style="background:rgba(239,68,68,0.15); color:var(--danger); border:none; padding:6px 10px; border-radius:8px; font-weight:bold; cursor:pointer;" onclick="window.hDelRecurring(${r.id})">USUŃ</button></div></div>`).join('') || '<div style="color:var(--muted); font-size:0.8rem;">Brak skonfigurowanych automatów.</div>'}</div></div><div class="section-lbl" style="color:var(--life); border-color:var(--life);">👥 Członkowie Rodziny</div><div class="panel" style="border-color:rgba(20,184,166,0.3);"><div class="inp-row"><div class="inp-group"><input type="text" id="h-new-mem" placeholder="Nowy domownik"></div><button class="btn btn-home" style="width:auto; margin-top:0; padding: 0 20px;" onclick="window.hAddMem()">DODAJ</button></div><div style="margin-top:15px; border-top:1px dashed rgba(255,255,255,0.1); padding-top:15px;">${h.members.map(m => `<div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:12px 15px; border-radius:12px; margin-bottom:10px; border-left:4px solid var(--life);"><strong style="color:#fff; font-size:1.1rem;">${m}</strong>${h.members.length > 1 ? `<button style="background:rgba(239,68,68,0.15); color:var(--danger); border:none; padding:8px 12px; border-radius:8px; font-weight:bold; cursor:pointer;" onclick="window.hDelMem('${m}')">USUŃ</button>` : `<span style="color:var(--muted); font-size:0.75rem;">(Główny)</span>`}</div>`).join('')}</div></div><div class="section-lbl" style="color:var(--plan); border-color:var(--plan);">🎯 Limity i Cele miesięczne</div><div class="panel" style="border-color:var(--plan);"><div class="inp-group" style="margin-bottom:12px;"><label>Wybierz Kategorię do limitu</label><select id="hb-cat">${Object.keys(C_EXP).map(k=>`<option value="${k}">${k}</option>`).join('')}</select></div><div class="inp-row"><div class="inp-group"><label>Miesięczny Limit (zł)</label><input type="number" id="hb-val" placeholder="np. 500"></div></div><button class="btn" style="background:var(--plan); color:#fff; padding:15px;" onclick="window.hSetBudget()">USTAW LIMIT KATEGORII</button><div style="margin-top:20px;">${Object.keys(h.budgets || {}).map(k => { let limit = h.budgets[k]; let spent = 0; let now = new Date(); h.trans.forEach(x => { if(!x.isPlanned && x.type==='exp' && x.cat===k && new Date(x.rD).getMonth()===now.getMonth()) spent += x.v; }); let pct = Math.min((spent / limit) * 100, 100); let color = pct > 90 ? 'var(--danger)' : (pct > 70 ? 'var(--warning)' : 'var(--success)'); return `<div style="margin-bottom:15px;"><div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:5px;"><span>${k}</span><span style="color:${color}">Wydano: ${spent.toFixed(0)} / ${limit} zł</span></div><div style="width:100%; height:8px; background:rgba(255,255,255,0.1); border-radius:4px; overflow:hidden;"><div style="width:${pct}%; background:${color}; height:100%;"></div></div></div>`; }).join('')}</div></div>
+    if(t === 'set') { let catSrcSet = window.hRecType === 'exp' ? C_EXP : C_INC; if(!catSrcSet[window.hRecCat]) window.hRecCat = Object.keys(catSrcSet)[0]; let accOptionsSet = h.accs.map(a => `<option value="${a.id}">${a.n}</option>`).join(''); APP.innerHTML = hdr + `<div class="dash-hero" style="padding-bottom:10px;"><p>USTAWIENIA BUDŻETU</p></div><div class="section-lbl" style="color:var(--info); border-color:var(--info);">⚙️ Automatyzacja (Stałe Koszty i Wpływy)</div><div class="panel" style="border-color:var(--info);"><p style="font-size:0.75rem; color:var(--muted); margin-bottom:15px; line-height:1.4;">Dodaj tu rachunki lub wpływy, a system sam doda je wybranego dnia każdego miesiąca!</p><div class="mode-switch" style="background:rgba(0,0,0,0.5); margin-bottom:15px;"><div class="m-btn ${window.hRecType==='exp'?'active':''}" style="${window.hRecType==='exp'?'background:var(--danger);color:#fff;':''}" onclick="window.hRecType='exp';window.render()">WYDATEK</div><div class="m-btn ${window.hRecType==='inc'?'active':''}" style="${window.hRecType==='inc'?'background:var(--success);color:#fff;':''}" onclick="window.hRecType='inc';window.render()">WPŁYW</div></div><div class="inp-row"><div class="inp-group"><label>Nazwa</label><input type="text" id="hr-name" placeholder="np. Czynsz" style="background:#000;"></div><div class="inp-group"><label>Kwota</label><input type="number" id="hr-val" placeholder="np. 2000" style="background:#000;"></div></div><div class="inp-row" style="margin-bottom:10px;"><div class="inp-group" style="flex:2;"><label>Kategoria</label><select onchange="window.hRecCat=this.value" style="background:#000;">${Object.keys(catSrcSet).map(k => `<option value="${k}" ${window.hRecCat===k?'selected':''}>${k}</option>`).join('')}</select></div><div class="inp-group" style="flex:1;"><label>Dzień m-ca</label><input type="number" id="hr-day" value="1" min="1" max="31" placeholder="1-31" style="background:#000;"></div></div><div class="inp-group" style="margin-bottom:15px;"><label>Konto docelowe</label><select id="hr-acc" onchange="window.hRecAcc=this.value" style="background:#000;">${accOptionsSet}</select></div><button class="btn" style="background:var(--info); color:#fff; padding:15px; margin-bottom:20px;" onclick="window.hAddRecurring()">DODAJ DO AUTOMATU</button><div style="border-top:1px dashed rgba(255,255,255,0.1); padding-top:15px;"><span style="font-size:0.75rem; color:var(--muted); font-weight:bold; text-transform:uppercase; margin-bottom:10px; display:block;">Twoje automaty (${h.recurring.length}):</span>${h.recurring.map(r => `<div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:10px 15px; border-radius:12px; margin-bottom:10px; border-left:4px solid ${r.t === 'exp' ? 'var(--danger)' : 'var(--success)'};"><div><strong style="color:#fff; font-size:1rem;">${r.n}</strong><span style="font-size:0.7rem; color:var(--muted); display:block;">${r.c} <strong style="color:#fff;">(Dzień: ${r.day||1})</strong></span></div><div style="display:flex; align-items:center; gap:15px;"><strong style="color:${r.t === 'exp' ? 'var(--danger)' : 'var(--success)'};">${(parseFloat(r.v)||0).toFixed(0)} zł</strong><button style="background:rgba(239,68,68,0.15); color:var(--danger); border:none; padding:6px 10px; border-radius:8px; font-weight:bold; cursor:pointer;" onclick="window.hDelRecurring(${r.id})">USUŃ</button></div></div>`).join('') || '<div style="color:var(--muted); font-size:0.8rem;">Brak skonfigurowanych automatów.</div>'}</div></div><div class="section-lbl" style="color:var(--life); border-color:var(--life);">👥 Członkowie Rodziny</div><div class="panel" style="border-color:rgba(20,184,166,0.3);"><div class="inp-row"><div class="inp-group"><input type="text" id="h-new-mem" placeholder="Nowy domownik"></div><button class="btn btn-home" style="width:auto; margin-top:0; padding: 0 20px;" onclick="window.hAddMem()">DODAJ</button></div><div style="margin-top:15px; border-top:1px dashed rgba(255,255,255,0.1); padding-top:15px;">${h.members.map(m => `<div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:12px 15px; border-radius:12px; margin-bottom:10px; border-left:4px solid var(--life);"><strong style="color:#fff; font-size:1.1rem;">${m}</strong>${h.members.length > 1 ? `<button style="background:rgba(239,68,68,0.15); color:var(--danger); border:none; padding:8px 12px; border-radius:8px; font-weight:bold; cursor:pointer;" onclick="window.hDelMem('${m}')">USUŃ</button>` : `<span style="color:var(--muted); font-size:0.75rem;">(Główny)</span>`}</div>`).join('')}</div></div><div class="section-lbl" style="color:var(--plan); border-color:var(--plan);">🎯 Limity i Cele miesięczne</div><div class="panel" style="border-color:var(--plan);"><div class="inp-group" style="margin-bottom:12px;"><label>Wybierz Kategorię do limitu</label><select id="hb-cat">${Object.keys(C_EXP).map(k=>`<option value="${k}">${k}</option>`).join('')}</select></div><div class="inp-row"><div class="inp-group"><label>Miesięczny Limit (zł)</label><input type="number" id="hb-val" placeholder="np. 500"></div></div><button class="btn" style="background:var(--plan); color:#fff; padding:15px;" onclick="window.hSetBudget()">USTAW LIMIT KATEGORII</button><div style="margin-top:20px;">${Object.keys(h.budgets || {}).map(k => { let limit = h.budgets[k]; let spent = 0; let now = new Date(); h.trans.forEach(x => { if(!x.isPlanned && x.type==='exp' && x.cat===k && new Date(x.rD).getMonth()===now.getMonth()) spent += parseFloat(x.v)||0; }); let pct = Math.min((spent / limit) * 100, 100); let color = pct > 90 ? 'var(--danger)' : (pct > 70 ? 'var(--warning)' : 'var(--success)'); return `<div style="margin-bottom:15px;"><div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:5px;"><span>${k}</span><span style="color:${color}">Wydano: ${spent.toFixed(0)} / ${limit} zł</span></div><div style="width:100%; height:8px; background:rgba(255,255,255,0.1); border-radius:4px; overflow:hidden;"><div style="width:${pct}%; background:${color}; height:100%;"></div></div></div>`; }).join('')}</div></div>
     
     <div class="section-lbl" style="color:#ffdd00; border-color:#ffdd00; margin-top:30px;">☕ Wsparcie projektu StyreOS</div>
     <div class="panel" style="border-color:rgba(255, 221, 0, 0.4); background: linear-gradient(145deg, #1a1a00, #09090b); text-align:center; padding:20px;">
