@@ -1,5 +1,5 @@
 // ==========================================
-// PLIK 2: home.js - StyreOS 13.1 PRO (Rozwijane Szczegóły w widoku kompaktowym)
+// PLIK 2: home.js - StyreOS 13.2 PRO (Poprawiona logika kredytów "w trakcie spłaty")
 // ==========================================
 const FIXED_EXP_CATS = ['Stałe opłaty / Czynsz', 'Prąd / Gaz / Woda', 'Internet i Telefon', 'Kredyt / Leasing', 'Dom i Rachunki'];
 const C_EXP = { 'Stałe opłaty / Czynsz': {c: '#f59e0b', i: '🏢'}, 'Prąd / Gaz / Woda': {c: '#0ea5e9', i: '⚡'}, 'Internet i Telefon': {c: '#8b5cf6', i: '🌐'}, 'Kredyt / Leasing': {c: '#ef4444', i: '🏦'}, 'Zakupy Spożywcze': {c: '#22c55e', i: '🛒'}, 'Dom i Rachunki': {c: '#14b8a6', i: '🏠'}, 'Auto i Transport': {c: '#f59e0b', i: '🚗'}, 'Rozrywka': {c: '#a855f7', i: '🎉'}, 'Jedzenie na mieście': {c: '#ef4444', i: '🍔'}, 'Ubrania': {c: '#ec4899', i: '👗'}, 'Zdrowie': {c: '#10b981', i: '💊'}, 'Oszczędności / Skarbonka': {c: '#10b981', i: '🐷'}, 'Inne Wydatki': {c: '#64748b', i: '📦'} };
@@ -210,7 +210,6 @@ window.hShowIconPicker = function(accId) {
 window.hApplyIcon = function(id, ico, col) { let ac = db.home.accs.find(x => x.id === id); if(ac) { ac.i = ico; ac.c = col; window.save(); window.render(); } document.getElementById('m-icon-picker').remove(); }
 window.hDelAcc = function(id) { if(db.home.accs.length <= 1) return window.sysAlert("Błąd", "Musisz mieć min. 1 konto!"); window.sysConfirm("Usuwanie konta", "Na pewno? Znikną przypisane środki.", () => { db.home.accs = db.home.accs.filter(a => a.id !== id); window.save(); window.render(); }); }
 
-
 // --- MODUŁ KREDYTÓW I WYBÓR KONTA ---
 window.hOpenLoanModal = function(id = null) {
     let ln = id ? db.home.loans.find(x => x.id == id) : null;
@@ -242,7 +241,7 @@ window.hOpenLoanModal = function(id = null) {
             <div class="inp-group"><label>Z ilu rat łącznie?</label><input type="number" id="ml-total-inst" value="${ti}" placeholder="np. 60"></div>
             <div class="inp-group"><label>Ile rat Zostało?</label><input type="number" id="ml-left-inst" value="${i}" placeholder="np. 56"></div>
         </div>
-        <div class="inp-group" style="margin-bottom:15px; display:${id?'block':'none'};"><label>Początkowy Kapitał z Banku (opcjonalnie)</label><input type="number" id="ml-borrowed" value="${b}"></div>
+        <div class="inp-group" style="margin-bottom:15px;"><label>Początkowy kapitał (Z umowy)</label><input type="number" id="ml-borrowed" value="${b}" placeholder="np. 38000"></div>
         <button class="btn btn-danger" onclick="window.hSaveLoan('${id||''}')">ZAPISZ KREDYT</button>
         <button class="btn" style="background:transparent; color:var(--muted); box-shadow:none; margin-top:5px;" onclick="document.getElementById('m-loan').remove()">ANULUJ</button>
     </div></div>`;
@@ -306,6 +305,7 @@ window.hOpenPayLoanModal = function(loanId, transId = null) {
 window.hExecPayLoan = function(loanId, transId) {
     let val = parseFloat(document.getElementById('mpl-val').value); let accId = document.getElementById('mpl-acc').value;
     if(!val || val <= 0) return window.sysAlert("Błąd", "Błędna kwota wpłaty!");
+
     let ln = db.home.loans.find(x => x.id == loanId);
     if(ln) {
         let kap = parseFloat(ln.kapital)||0; let pct = parseFloat(ln.pct)||0; 
@@ -317,8 +317,12 @@ window.hExecPayLoan = function(loanId, transId) {
         ln.kapital = kap - principalPaid; ln.installmentsLeft = (parseInt(ln.installmentsLeft)||0) - 1;
         if(ln.kapital < 0) ln.kapital = 0; if(ln.installmentsLeft < 0) ln.installmentsLeft = 0;
         
-        if(transId) { db.home.trans = db.home.trans.filter(x => x.id != transId); } 
-        else { let today = window.getLocalYMD().substring(0,7); db.home.trans = db.home.trans.filter(x => !(x.isPlanned && x.loanId == loanId && x.rD.startsWith(today))); }
+        if(transId) {
+            db.home.trans = db.home.trans.filter(x => x.id != transId);
+        } else {
+            let today = window.getLocalYMD().substring(0,7);
+            db.home.trans = db.home.trans.filter(x => !(x.isPlanned && x.loanId == loanId && x.rD.startsWith(today)));
+        }
         
         window.hSyncSchedule(); window.save(); window.render(); 
         window.sysAlert("Rata opłacona!", `Z konta pobrano ${val.toFixed(2)} zł.\nOdsetki dla banku: ${interest.toFixed(2)} zł.\nKapitał pomniejszono o: ${principalPaid.toFixed(2)} zł.`, "success");
@@ -338,6 +342,7 @@ window.hOverpayLoan = function(loanId) {
         <button class="btn" style="background:transparent; color:var(--muted); box-shadow:none; margin-top:5px;" onclick="document.getElementById('m-overpay').remove()">ANULUJ</button>
     </div></div>`; document.body.insertAdjacentHTML('beforeend', html);
 }
+
 window.hSaveOverpay = function(loanId) {
     let val = parseFloat(document.getElementById('mo-val').value); let accId = document.getElementById('mo-acc').value;
     if(!val || val <= 0) return window.sysAlert("Błąd", "Wpisz poprawną kwotę!");
@@ -508,23 +513,21 @@ window.rHome = function() {
 
         if (activeLoans.length === 0) {
             loansHtml = '<div style="text-align:center; color:var(--muted); font-size:0.85rem; padding:10px 0 30px;">Brak kredytów. Ciesz się wolnością finansową! 🕊️</div>';
-        } else if (activeLoans.length === 1) { // TYLKO JEDEN KREDYT (DUŻY WIDOK)
+        } else if (activeLoans.length <= 3) {
+            // WIDOK SZCZEGÓŁOWY DLA 1-3 KREDYTÓW
             loansHtml = activeLoans.map(l => {
                 let kap = parseFloat(l.kapital); if(isNaN(kap)) kap = parseFloat(l.left)||0;
-                let rat = parseFloat(l.rata)||0;
-                let instL = parseInt(l.installmentsLeft)||0;
-                let totInst = parseInt(l.totalInst)||0;
-                let bor = parseFloat(l.borrowed); if(isNaN(bor)) bor = parseFloat(l.total)||0;
+                let rat = parseFloat(l.rata)||0; let instL = parseInt(l.installmentsLeft)||0;
+                let totInst = parseInt(l.totalInst)||0; let bor = parseFloat(l.borrowed); if(isNaN(bor)) bor = parseFloat(l.total)||0;
+                let pctBank = parseFloat(l.pct)||0;
 
                 let totalCostRemaining = rat * instL; 
                 let savings = totalCostRemaining - kap; 
-                
                 let isError = totalCostRemaining < kap;
                 let errorHtml = isError ? `<div style="background:rgba(239,68,68,0.15); color:var(--danger); padding:8px; border-radius:8px; font-size:0.75rem; margin-top:10px; border:1px solid rgba(239,68,68,0.3); text-align:center;">⚠️ Błąd: Suma rat mniejsza niż kapitał!</div>` : '';
                 let savingsHtml = (!isError && savings > 0) ? `<div style="font-size:0.75rem; color:var(--success); margin-top:5px; font-weight:bold; text-align:center;">Spłacając dziś, unikasz ${savings.toFixed(2)} zł odsetek! 💸</div>` : '';
 
-                let pct = 0;
-                if(totInst > 0) { pct = ((totInst - instL) / totInst) * 100; }
+                let pct = 0; if(totInst > 0) { pct = ((totInst - instL) / totInst) * 100; }
                 if(pct > 100) pct = 100; if(pct < 0) pct = 0;
                 
                 return `
@@ -543,10 +546,10 @@ window.rHome = function() {
                     </div>
                     <div style="padding:0 20px 15px;">
                         <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
-                            <span style="color:var(--muted); font-size:0.85rem;">Przyznana kwota z banku</span><strong style="color:#fff; font-size:0.9rem;">${bor.toFixed(2)} PLN</strong>
+                            <span style="color:var(--muted); font-size:0.85rem;">Początkowy kapitał (Z umowy)</span><strong style="color:#fff; font-size:0.9rem;">${bor.toFixed(2)} PLN</strong>
                         </div>
                         <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
-                            <span style="color:var(--muted); font-size:0.85rem;">Całkowity koszt (Z odsetkami)</span><strong style="color:var(--danger); font-size:0.9rem;">${totalCostRemaining.toFixed(2)} PLN</strong>
+                            <span style="color:var(--muted); font-size:0.85rem;">Pozostało do spłaty (Z odsetkami)</span><strong style="color:var(--danger); font-size:0.9rem;">${totalCostRemaining.toFixed(2)} PLN</strong>
                         </div>
                         <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
                             <span style="color:var(--muted); font-size:0.85rem;">Kwota najbliższej raty</span><strong style="color:#fff; font-size:0.9rem;">${rat.toFixed(2)} PLN</strong>
@@ -555,7 +558,7 @@ window.rHome = function() {
                             <span style="color:var(--muted); font-size:0.85rem;">Pozostało rat</span><strong style="color:#fff; font-size:0.9rem;">${instL} z ${totInst}</strong>
                         </div>
                         <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
-                            <span style="color:var(--muted); font-size:0.85rem;">Dzień spłaty / Oprocentowanie</span><strong style="color:#fff; font-size:0.9rem;">${l.day} dzień / ${l.pct||0}%</strong>
+                            <span style="color:var(--muted); font-size:0.85rem;">Dzień spłaty / Oprocentowanie</span><strong style="color:#fff; font-size:0.9rem;">${l.day} dzień / ${pctBank}%</strong>
                         </div>
                         <div style="margin-top:15px;">
                             <div style="display:flex; justify-content:space-between; margin-bottom:5px; font-size:0.75rem; color:var(--muted);"><span>Progres spłaty (W ratach)</span><span style="color:var(--success); font-weight:bold;">${pct.toFixed(1)}%</span></div>
@@ -574,7 +577,7 @@ window.rHome = function() {
                 </div>`;
             }).join('');
         } else {
-            // WIDOK KOMPAKTOWY + ROZWIJANIE SZCZEGÓŁÓW (Więcej niż 1)
+            // WIDOK KOMPAKTOWY + ROZWIJANIE SZCZEGÓŁÓW (Więcej niż 3)
             loansHtml = `<div style="margin-bottom:15px; text-align:center; font-size:0.75rem; color:var(--info); font-weight:bold; background:rgba(14,165,233,0.1); padding:8px; border-radius:8px; border:1px solid rgba(14,165,233,0.3);">Włączono widok kompaktowy (${activeLoans.length} aktywne zobowiązania)</div>` + 
             activeLoans.map(l => {
                 let kap = parseFloat(l.kapital); if(isNaN(kap)) kap = parseFloat(l.left)||0;
@@ -597,10 +600,10 @@ window.rHome = function() {
                 let hiddenDetails = `
                     <div id="ldet_${l.id}" style="display:none; margin-bottom:12px; border-top:1px dashed rgba(255,255,255,0.05); padding-top:10px;">
                         <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.02);">
-                            <span style="color:var(--muted); font-size:0.75rem;">Przyznana kwota</span><strong style="color:#fff; font-size:0.8rem;">${bor.toFixed(2)} PLN</strong>
+                            <span style="color:var(--muted); font-size:0.75rem;">Początkowy kapitał</span><strong style="color:#fff; font-size:0.8rem;">${bor.toFixed(2)} PLN</strong>
                         </div>
                         <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.02);">
-                            <span style="color:var(--muted); font-size:0.75rem;">Całkowity koszt do końca</span><strong style="color:var(--danger); font-size:0.8rem;">${totalCostRemaining.toFixed(2)} PLN</strong>
+                            <span style="color:var(--muted); font-size:0.75rem;">Pozostało do spłaty (Z odsetkami)</span><strong style="color:var(--danger); font-size:0.8rem;">${totalCostRemaining.toFixed(2)} PLN</strong>
                         </div>
                         <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.02);">
                             <span style="color:var(--muted); font-size:0.75rem;">Kwota najbliższej raty</span><strong style="color:#fff; font-size:0.8rem;">${rat.toFixed(2)} PLN</strong>
