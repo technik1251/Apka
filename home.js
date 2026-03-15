@@ -1,5 +1,5 @@
 // ==========================================
-// PLIK 2: home.js - StyreOS 8.0 PRO (Prawdziwa Amortyzacja Bankowa, Zmienne %, Nadpłaty)
+// PLIK 2: home.js - StyreOS 8.1 PRO (Koniec z brzydkimi oknami, Piękne Modale do Nadpłat)
 // ==========================================
 const FIXED_EXP_CATS = ['Stałe opłaty / Czynsz', 'Prąd / Gaz / Woda', 'Internet i Telefon', 'Kredyt / Leasing', 'Dom i Rachunki'];
 const C_EXP = { 'Stałe opłaty / Czynsz': {c: '#f59e0b', i: '🏢'}, 'Prąd / Gaz / Woda': {c: '#0ea5e9', i: '⚡'}, 'Internet i Telefon': {c: '#8b5cf6', i: '🌐'}, 'Kredyt / Leasing': {c: '#ef4444', i: '🏦'}, 'Zakupy Spożywcze': {c: '#22c55e', i: '🛒'}, 'Dom i Rachunki': {c: '#14b8a6', i: '🏠'}, 'Auto i Transport': {c: '#f59e0b', i: '🚗'}, 'Rozrywka': {c: '#a855f7', i: '🎉'}, 'Jedzenie na mieście': {c: '#ef4444', i: '🍔'}, 'Ubrania': {c: '#ec4899', i: '👗'}, 'Zdrowie': {c: '#10b981', i: '💊'}, 'Oszczędności / Skarbonka': {c: '#10b981', i: '🐷'}, 'Inne Wydatki': {c: '#64748b', i: '📦'} };
@@ -135,7 +135,6 @@ window.hShowIconPicker = function(accId) {
 window.hApplyIcon = function(id, ico, col) { let ac = db.home.accs.find(x => x.id === id); if(ac) { ac.i = ico; ac.c = col; window.save(); window.render(); } document.getElementById('m-icon-picker').remove(); }
 window.hDelAcc = function(id) { if(db.home.accs.length <= 1) return window.sysAlert("Błąd", "Musisz mieć min. 1 konto!"); window.sysConfirm("Usuwanie konta", "Na pewno? Znikną przypisane środki.", () => { db.home.accs = db.home.accs.filter(a => a.id !== id); window.save(); window.render(); }); }
 
-// --- PRAWDZIWY KALKULATOR KREDYTÓW (BANKOWA MATEMATYKA) ---
 window.hOpenLoanModal = function(id = null) {
     let ln = id ? db.home.loans.find(x => x.id == id) : null;
     let n = ln ? ln.n : ''; 
@@ -145,10 +144,11 @@ window.hOpenLoanModal = function(id = null) {
     let i = ln ? ln.installmentsLeft : ''; 
     let d = ln ? ln.day : 10; 
     let p = ln ? (ln.pct||0) : '';
-    let leftKapital = ln ? ln.kapital : ''; // Operujemy na KAPITALE
+    let leftKapital = ln ? ln.kapital : '';
 
     let html = `<div id="m-loan" class="modal-overlay"><div class="panel" style="width:100%; max-width:380px; background:#18181b; border:1px solid #27272a;">
         <h3 style="margin-top:0; color:#fff; display:flex; align-items:center; gap:10px;">${ln ? '✏️ Edytuj' : '🏦 Nowy'} Kredyt / Pożyczkę</h3>
+        
         <div class="inp-group" style="margin-bottom:12px;"><label>Nazwa (np. Kredyt Santander)</label><input type="text" id="ml-n" value="${n}"></div>
         <div class="inp-row" style="margin-bottom:12px;">
             <div class="inp-group"><label>KAPITAŁ do spłaty na dziś (zł)</label><input type="number" step="0.01" id="ml-kapital" value="${leftKapital}" placeholder="np. 6980.55"></div>
@@ -178,9 +178,8 @@ window.hSaveLoan = function(id) {
     let ti = parseInt(document.getElementById('ml-total-inst').value);
     let i = parseInt(document.getElementById('ml-left-inst').value);
     let d = parseInt(document.getElementById('ml-day').value) || 10;
-    
     let bEl = document.getElementById('ml-borrowed');
-    let b = bEl && bEl.value ? parseFloat(bEl.value) : k; // Jeśli nowy, początkowy kapitał to wpisany kapitał
+    let b = bEl && bEl.value ? parseFloat(bEl.value) : k; 
     
     if(!n || isNaN(k) || isNaN(r) || isNaN(ti) || isNaN(i)) return window.sysAlert("Błąd", "Wypełnij poprawnie podstawowe kwoty i raty!");
     
@@ -198,9 +197,8 @@ window.hDelLoan = function(id) { window.sysConfirm("Usuwanie", "Na pewno usuną�
 window.hPayLoanDirect = function(loanId) {
     let ln = db.home.loans.find(x => x.id == loanId);
     if(ln) {
-        // Obliczenia bankowe
-        let interest = ln.kapital * (ln.pct / 100) / 12; // Odsetki z tego miesiąca
-        let principalPaid = ln.rata - interest; // Ile realnie spłacono długu
+        let interest = ln.kapital * (ln.pct / 100) / 12; 
+        let principalPaid = ln.rata - interest; 
         if(principalPaid < 0) principalPaid = 0; 
         
         db.home.trans.unshift({ id: Date.now(), type: 'exp', cat: 'Kredyt / Leasing', v: ln.rata, d: 'Spłata raty: ' + ln.n, dt: new Date().toLocaleDateString('pl-PL'), rD: new Date().toISOString(), isPlanned: false, acc: db.home.accs[0].id });
@@ -218,20 +216,35 @@ window.hPayLoanDirect = function(loanId) {
     }
 }
 
+// --- NOWY, PIĘKNY MODAL DO NADPŁATY ---
 window.hOverpayLoan = function(loanId) {
     let ln = db.home.loans.find(x => x.id == loanId);
+    if(!ln) return;
+    let html = `<div id="m-overpay" class="modal-overlay">
+        <div class="panel" style="width:100%; max-width:320px; background:#09090b; border-color:var(--info);">
+            <h3 style="margin-top:0; color:var(--info);">💰 Nadpłata Kapitału</h3>
+            <p style="font-size:0.8rem; color:var(--muted); margin-bottom:15px;">Ile dodatkowej gotówki wpłacasz na <strong>${ln.n}</strong>?</p>
+            <div class="inp-group" style="margin-bottom:20px;">
+                <input type="number" id="mo-val" placeholder="np. 1000" class="big-inp" style="color:var(--info); border:none; background:rgba(0,0,0,0.5);">
+            </div>
+            <button class="btn" style="background:var(--info); color:#fff;" onclick="window.hSaveOverpay(${loanId})">ZAPISZ NADPŁATĘ</button>
+            <button class="btn" style="background:transparent; color:var(--muted); box-shadow:none; margin-top:5px;" onclick="document.getElementById('m-overpay').remove()">ANULUJ</button>
+        </div>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+}
+window.hSaveOverpay = function(loanId) {
+    let val = parseFloat(document.getElementById('mo-val').value);
+    if(!val || val <= 0) return window.sysAlert("Błąd", "Wpisz poprawną kwotę!");
+    let ln = db.home.loans.find(x => x.id == loanId);
     if(ln) {
-        window.sysPrompt("Nadpłata Kredytu", `Ile dodatkowej gotówki wpłacasz na poczet kapitału kredytu "${ln.n}"? (Zmniejszy to przyszłe odsetki!)`, (v) => {
-            let val = parseFloat(v);
-            if(val > 0) {
-                db.home.trans.unshift({ id: Date.now(), type: 'exp', cat: 'Kredyt / Leasing', v: val, d: 'Nadpłata kapitału: ' + ln.n, dt: new Date().toLocaleDateString('pl-PL'), rD: new Date().toISOString(), isPlanned: false, acc: db.home.accs[0].id });
-                ln.kapital -= val;
-                if(ln.kapital < 0) ln.kapital = 0;
-                window.save(); window.render();
-                window.sysAlert("Nadpłacono!", `Zmniejszyłeś kapitał o ${val.toFixed(2)} zł! Wejdź w edycję, żeby dostosować nową liczbę rat lub wysokość nowej raty od banku.`, "success");
-            }
-        });
+        db.home.trans.unshift({ id: Date.now(), type: 'exp', cat: 'Kredyt / Leasing', v: val, d: 'Nadpłata kapitału: ' + ln.n, dt: new Date().toLocaleDateString('pl-PL'), rD: new Date().toISOString(), isPlanned: false, acc: db.home.accs[0].id });
+        ln.kapital -= val;
+        if(ln.kapital < 0) ln.kapital = 0;
+        window.save(); window.render();
+        window.sysAlert("Nadpłacono!", `Zmniejszyłeś kapitał o ${val.toFixed(2)} zł!`, "success");
     }
+    document.getElementById('m-overpay').remove();
 }
 
 window.hPayLoanInstallment = function(transId) {
@@ -260,14 +273,35 @@ window.hSavePiggy = function() {
     db.home.piggy.push({id: Date.now(), n:n, target:t, saved:s});
     window.save(); window.render(); document.getElementById('m-piggy').remove();
 }
+
+// --- NOWY, PIĘKNY MODAL DO ZASILANIA SKARBONKI ---
 window.hAddFundsPiggy = function(id) {
     let pg = db.home.piggy.find(x => x.id == id);
-    if(pg) {
-        window.sysPrompt("Zasil Cel", `Ile odkładasz na ${pg.n}?`, (v) => {
-            let val = parseFloat(v); if(val > 0) { pg.saved += val; window.save(); window.render(); }
-        });
-    }
+    if(!pg) return;
+    let html = `<div id="m-add-funds" class="modal-overlay">
+        <div class="panel" style="width:100%; max-width:320px; background:#09090b; border-color:var(--success);">
+            <h3 style="margin-top:0; color:var(--success);">🐷 Zasil Skarbonkę</h3>
+            <p style="font-size:0.8rem; color:var(--muted); margin-bottom:15px;">Ile odkładasz na cel: <strong>${pg.n}</strong>?</p>
+            <div class="inp-group" style="margin-bottom:20px;">
+                <input type="number" id="maf-val" placeholder="np. 100" class="big-inp" style="color:var(--success); border:none; background:rgba(0,0,0,0.5);">
+            </div>
+            <button class="btn btn-success" onclick="window.hSaveFundsPiggy(${id})">WPŁAĆ ŚRODKI</button>
+            <button class="btn" style="background:transparent; color:var(--muted); box-shadow:none; margin-top:5px;" onclick="document.getElementById('m-add-funds').remove()">ANULUJ</button>
+        </div>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
 }
+window.hSaveFundsPiggy = function(id) {
+    let val = parseFloat(document.getElementById('maf-val').value);
+    if(!val || val <= 0) return window.sysAlert("Błąd", "Wpisz poprawną kwotę!");
+    let pg = db.home.piggy.find(x => x.id == id);
+    if(pg) {
+        pg.saved += val; 
+        window.save(); window.render();
+    }
+    document.getElementById('m-add-funds').remove();
+}
+
 window.hDelPiggy = function(id) { window.sysConfirm("Usuwanie", "Na pewno usunąć ten cel?", () => { db.home.piggy = db.home.piggy.filter(x => x.id != id); window.save(); window.render(); }); }
 
 window.hAddDebt = function() { 
@@ -295,13 +329,11 @@ window.hAddRecurring = function() { let n = document.getElementById('hr-name').v
 window.hDelRecurring = function(id) { db.home.recurring = db.home.recurring.filter(r => r.id !== id); window.save(); window.render(); }
 window.hSetBudget = function() { let cat = document.getElementById('hb-cat').value; let val = parseFloat(document.getElementById('hb-val').value); if(!db.home.budgets) db.home.budgets = {}; if(val > 0) { db.home.budgets[cat] = val; window.sysAlert("Sukces", "Ustawiono limit.", "success");} else { delete db.home.budgets[cat]; } window.save(); window.render(); }
 
-// --- GŁÓWNY RENDER ---
 window.rHome = function() { 
     let h = db.home; let t = db.tab; if(!window.hMem) window.hMem = h.members[0] || db.userName;
     let needsSave = false; let today = window.getLocalYMD();
     h.trans.forEach(x => { if(x.isPlanned && !x.loanId && x.rD.split('T')[0] <= today) { x.isPlanned = false; needsSave = true; } });
     
-    // Migracja starych kredytów do nowego systemu (Kapitału)
     h.loans.forEach(l => { if(l.kapital === undefined) { l.kapital = l.left; } });
     if(needsSave) { window.save(); }
 
@@ -358,17 +390,13 @@ window.rHome = function() {
         <div style="padding: 10px 15px;">
             ${db.home.loans.length === 0 ? '<div style="text-align:center; color:var(--muted); font-size:0.85rem; padding:10px 0 30px;">Brak kredytów. Ciesz się wolnością finansową! 🕊️</div>' : db.home.loans.map(l => {
                 
-                // Matematyka (Santander Style)
-                let currentInterest = l.kapital * (l.pct / 100) / 12; // Szacunkowe odsetki w tej racie
-                let currentPrincipal = l.rata - currentInterest; // Ile w raty to spłata kapitału
-                if(currentPrincipal < 0) currentPrincipal = 0;
-                
-                let totalCostRemaining = l.rata * l.installmentsLeft; // Rata * reszta rat
-                let savings = totalCostRemaining - l.kapital; // Odsetki, których unikniemy spłacając dziś
+                let totalCostRemaining = l.rata * l.installmentsLeft; 
+                let savings = totalCostRemaining - l.kapital; 
                 
                 let pct = 0;
                 if(l.totalInst > 0) { pct = ((l.totalInst - l.installmentsLeft) / l.totalInst) * 100; }
                 if(pct > 100) pct = 100; if(pct < 0) pct = 0;
+                if(isNaN(pct)) pct = 0;
                 
                 return `
                 <div class="panel" style="padding:0; border:1px solid #27272a; border-radius:24px; overflow:hidden; margin-bottom:20px; background:#18181b;">
@@ -389,8 +417,7 @@ window.rHome = function() {
                             <span style="color:var(--muted); font-size:0.85rem;">Całkowity koszt (Z odsetkami)</span><strong style="color:var(--danger); font-size:0.9rem;">${totalCostRemaining.toFixed(2)} PLN</strong>
                         </div>
                         <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
-                            <div style="display:flex; flex-direction:column;"><span style="color:var(--muted); font-size:0.85rem;">Kwota najbliższej raty</span><span style="font-size:0.65rem; color:var(--success);">(Z tego kapitał: ${currentPrincipal.toFixed(2)} zł)</span></div>
-                            <strong style="color:#fff; font-size:0.9rem;">${l.rata.toFixed(2)} PLN</strong>
+                            <span style="color:var(--muted); font-size:0.85rem;">Kwota najbliższej raty</span><strong style="color:#fff; font-size:0.9rem;">${l.rata.toFixed(2)} PLN</strong>
                         </div>
                         <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
                             <span style="color:var(--muted); font-size:0.85rem;">Pozostało rat</span><strong style="color:#fff; font-size:0.9rem;">${l.installmentsLeft} z ${l.totalInst}</strong>
