@@ -1,5 +1,5 @@
 // ==========================================
-// PLIK 2: home.js - StyreOS 11.2 PRO (PRAWDZIWIE Kompaktowe Kredyty, Szukajka, Modale)
+// PLIK 2: home.js - StyreOS 12.0 PRO (Inteligentne Cofanie, Reversible Loans, Modale)
 // ==========================================
 const FIXED_EXP_CATS = ['Stałe opłaty / Czynsz', 'Prąd / Gaz / Woda', 'Internet i Telefon', 'Kredyt / Leasing', 'Dom i Rachunki'];
 const C_EXP = { 'Stałe opłaty / Czynsz': {c: '#f59e0b', i: '🏢'}, 'Prąd / Gaz / Woda': {c: '#0ea5e9', i: '⚡'}, 'Internet i Telefon': {c: '#8b5cf6', i: '🌐'}, 'Kredyt / Leasing': {c: '#ef4444', i: '🏦'}, 'Zakupy Spożywcze': {c: '#22c55e', i: '🛒'}, 'Dom i Rachunki': {c: '#14b8a6', i: '🏠'}, 'Auto i Transport': {c: '#f59e0b', i: '🚗'}, 'Rozrywka': {c: '#a855f7', i: '🎉'}, 'Jedzenie na mieście': {c: '#ef4444', i: '🍔'}, 'Ubrania': {c: '#ec4899', i: '👗'}, 'Zdrowie': {c: '#10b981', i: '💊'}, 'Oszczędności / Skarbonka': {c: '#10b981', i: '🐷'}, 'Inne Wydatki': {c: '#64748b', i: '📦'} };
@@ -41,7 +41,7 @@ window.hSyncSchedule = function() {
         });
     }
 
-    if(db.home.loans) db.home.loans.forEach(l => {
+    if(db.home.loans) db.home.loans.filter(l => !l.isClosed).forEach(l => {
         let generated = 0;
         let instLeft = parseInt(l.installmentsLeft)||0;
         for(let i=0; i<24 && generated < instLeft; i++) {
@@ -114,12 +114,42 @@ window.hAction = function() {
     db.home.trans.sort((a,b) => new Date(b.rD) - new Date(a.rD)); window.hSyncSchedule(); window.save(); db.tab='dash'; window.render(); 
 }
 
-window.hDelTrans = function(id) { window.sysConfirm("Usuwanie", "Na pewno usunąć tę operację?", () => { db.home.trans = db.home.trans.filter(x => x.id != id); window.hSyncSchedule(); window.save(); window.render(); }); };
+// --- INTELIGENTNE COFANIE OPERACJI ---
+window.hDelTrans = function(id) { 
+    window.sysConfirm("Usuwanie", "Na pewno usunąć tę operację? Jeśli to spłata kredytu/skarbonki, zmiany zostaną cofnięte w systemie.", () => { 
+        let tr = db.home.trans.find(x => x.id == id);
+        if(tr) {
+            // Cofanie logiki kredytu
+            if(tr.loanAction) {
+                let ln = db.home.loans.find(x => x.id == tr.loanId);
+                if(ln) {
+                    ln.kapital = (parseFloat(ln.kapital)||0) + (parseFloat(tr.principalPaid)||0);
+                    if(tr.instReduced) ln.installmentsLeft = (parseInt(ln.installmentsLeft)||0) + parseInt(tr.instReduced);
+                    if(tr.loanAction === 'close') ln.isClosed = false; // Przywracanie zamkniętego kredytu!
+                }
+            }
+            // Cofanie logiki Skarbonki
+            if(tr.piggyAction === 'deposit') {
+                let pg = db.home.piggy.find(x => x.id == tr.piggyId);
+                if(pg) {
+                    pg.saved = (parseFloat(pg.saved)||0) - (parseFloat(tr.amount)||0);
+                    if(pg.saved < 0) pg.saved = 0;
+                }
+            }
+        }
+        db.home.trans = db.home.trans.filter(x => x.id != id); 
+        window.hSyncSchedule(); window.save(); window.render(); 
+    }); 
+};
+
 window.hEditTrans = function(id) {
     let tr = db.home.trans.find(x => x.id == id); if(!tr) return;
+    let isSystem = tr.loanAction || tr.piggyAction;
+    
     let html = `<div id="m-edit-h-trans" class="modal-overlay"><div class="panel" style="width:100%; max-width:380px; background: #09090b; border-color:var(--info);">
         <h3 style="margin-top:0; color:var(--info);">Edytuj operację</h3>
-        <div class="inp-group" style="margin-bottom:15px;"><label>Kwota (zł)</label><input type="number" step="0.01" id="eht-v" value="${tr.v}"></div>
+        ${isSystem ? `<p style="font-size:0.75rem; color:var(--warning); margin-bottom:15px; font-weight:bold; background:rgba(245,158,11,0.1); padding:8px; border-radius:8px;">⚠️ Operacja systemowa. Jej kwota jest powiązana z harmonogramem kredytu/celu. Aby zmienić kwotę, usuń ten wpis (zmiany zostaną cofnięte) i dodaj nową wpłatę.</p>` : ''}
+        <div class="inp-group" style="margin-bottom:15px;"><label>Kwota (zł)</label><input type="number" step="0.01" id="eht-v" value="${tr.v}" ${isSystem ? 'disabled style="opacity:0.5"' : ''}></div>
         <div class="inp-group" style="margin-bottom:20px;"><label>Data operacji</label><input type="date" id="eht-d" value="${tr.rD.split('T')[0]}"></div>
         <button class="btn btn-success" onclick="window.hSaveEditTrans('${id}')">ZAPISZ ZMIANY</button>
         <button class="btn" style="background:transparent; color:var(--muted); box-shadow:none; margin-top:5px;" onclick="document.getElementById('m-edit-h-trans').remove()">ANULUJ</button>
@@ -127,10 +157,17 @@ window.hEditTrans = function(id) {
 };
 window.hSaveEditTrans = function(id) {
     let tr = db.home.trans.find(x => x.id == id);
-    if(tr) { let nv = window.safeVal('eht-v'); let nd = document.getElementById('eht-d').value;
-        if(nv > 0 && nd) { tr.v = nv; let dObj = new Date(nd); dObj.setHours(12,0,0); tr.rD = dObj.toISOString(); tr.dt = dObj.toLocaleDateString('pl-PL'); tr.isPlanned = nd > window.getLocalYMD(); db.home.trans.sort((a,b) => new Date(b.rD) - new Date(a.rD)); window.hSyncSchedule(); window.save(); window.render(); } }
+    if(tr) { 
+        let nv = window.safeVal('eht-v'); let nd = document.getElementById('eht-d').value;
+        if(nv > 0 && nd) { 
+            if(!tr.loanAction && !tr.piggyAction) tr.v = nv; // Zmiana kwoty tylko dla zwykłych operacji
+            let dObj = new Date(nd); dObj.setHours(12,0,0); tr.rD = dObj.toISOString(); tr.dt = dObj.toLocaleDateString('pl-PL'); tr.isPlanned = nd > window.getLocalYMD(); 
+            db.home.trans.sort((a,b) => new Date(b.rD) - new Date(a.rD)); window.hSyncSchedule(); window.save(); window.render(); 
+        } 
+    }
     document.getElementById('m-edit-h-trans').remove();
 };
+
 
 window.hOpenAccModal = function(id = null) {
     let ac = id ? db.home.accs.find(x => x.id === id) : null; 
@@ -164,7 +201,7 @@ window.hApplyIcon = function(id, ico, col) { let ac = db.home.accs.find(x => x.i
 window.hDelAcc = function(id) { if(db.home.accs.length <= 1) return window.sysAlert("Błąd", "Musisz mieć min. 1 konto!"); window.sysConfirm("Usuwanie konta", "Na pewno? Znikną przypisane środki.", () => { db.home.accs = db.home.accs.filter(a => a.id !== id); window.save(); window.render(); }); }
 
 
-// --- MODUŁ KREDYTÓW ---
+// --- MODUŁ KREDYTÓW I WYBÓR KONTA ---
 window.hOpenLoanModal = function(id = null) {
     let ln = id ? db.home.loans.find(x => x.id == id) : null;
     let n = ln ? ln.n : ''; 
@@ -215,27 +252,31 @@ window.hSaveLoan = function(id) {
         let ln = db.home.loans.find(x => x.id == id);
         if(ln) { ln.n = n; ln.accId = accId; ln.kapital = k; ln.borrowed = b; ln.pct = p; ln.rata = r; ln.totalInst = ti; ln.installmentsLeft = i; ln.day = d; }
     } else {
-        db.home.loans.push({id: Date.now(), n:n, accId:accId, kapital:k, borrowed:b, pct:p, rata:r, totalInst:ti, installmentsLeft:i, day:d, lastPlanned:'', holidayMonth: ''});
+        db.home.loans.push({id: Date.now(), n:n, accId:accId, kapital:k, borrowed:b, pct:p, rata:r, totalInst:ti, installmentsLeft:i, day:d, lastPlanned:'', holidayMonth: '', isClosed: false});
     }
     window.hSyncSchedule(); window.save(); window.render(); document.getElementById('m-loan').remove();
 }
-window.hDelLoan = function(id) { window.sysConfirm("Usuwanie", "Na pewno usunąć ten kredyt?", () => { db.home.loans = db.home.loans.filter(x => x.id != id); db.home.trans = db.home.trans.filter(x => !(x.isPlanned && x.loanId == id)); window.hSyncSchedule(); window.save(); window.render(); }); }
+
+window.hDelLoan = function(id) { window.sysConfirm("Usuwanie", "Na pewno TRWALE usunąć ten kredyt z bazy?", () => { db.home.loans = db.home.loans.filter(x => x.id != id); db.home.trans = db.home.trans.filter(x => !(x.isPlanned && x.loanId == id)); window.hSyncSchedule(); window.save(); window.render(); }); }
 
 window.hCreditHoliday = function(loanId) {
     let ln = db.home.loans.find(x => x.id == loanId); if(!ln) return;
     let currentM = window.getLocalYMD().substring(0,7);
     if(ln.holidayMonth === currentM) return window.sysAlert("Błąd", "Już aktywowałeś wakacje kredytowe w tym miesiącu.");
-    window.sysConfirm("Wakacje Kredytowe 🏖️", "Zawiesić spłatę w tym miesiącu? Harmonogram przesunie się o jeden miesiąc.", () => {
-        ln.holidayMonth = currentM; window.hSyncSchedule(); window.save(); window.render(); window.sysAlert("Sukces!", "Wakacje kredytowe aktywowane. Rata zniknęła z tego miesiąca.", "success");
+    window.sysConfirm("Wakacje Kredytowe 🏖️", "Zawiesić spłatę w tym miesiącu? Bank nie pobierze opłaty, a harmonogram wydłuży się o miesiąc.", () => {
+        ln.holidayMonth = currentM; window.hSyncSchedule(); window.save(); window.render(); window.sysAlert("Sukces!", "Wakacje kredytowe aktywowane. Rata zniknęła z kalendarza.", "success");
     });
 }
+
 window.hPayOffCompletely = function(loanId) {
     let ln = db.home.loans.find(x => x.id == loanId); if(!ln) return;
     let kap = parseFloat(ln.kapital)||0; let rat = parseFloat(ln.rata)||0; let instL = parseInt(ln.installmentsLeft)||0;
     let savedInterest = (rat * instL) - kap;
     window.sysConfirm("Całkowita Spłata 🏆", `Chcesz spłacić cały kapitał (${kap.toFixed(2)} zł) dzisiaj? Unikniesz ${savedInterest.toFixed(2)} zł odsetek!`, () => {
-        db.home.trans.unshift({ id: Date.now(), type: 'exp', cat: 'Kredyt / Leasing', v: kap, d: 'Całkowita spłata: ' + ln.n, dt: new Date().toLocaleDateString('pl-PL'), rD: new Date().toISOString(), isPlanned: false, acc: ln.accId || db.home.accs[0].id });
-        db.home.loans = db.home.loans.filter(x => x.id != loanId); window.hSyncSchedule(); window.save(); window.render(); window.sysAlert("Kredyt Zamknięty! 🎉", `Jesteś wolny od tego długu! Zaoszczędzono ${savedInterest.toFixed(2)} zł odsetek.`, "success");
+        db.home.trans.unshift({ id: Date.now(), type: 'exp', cat: 'Kredyt / Leasing', v: kap, d: 'Całkowita spłata: ' + ln.n, dt: new Date().toLocaleDateString('pl-PL'), rD: new Date().toISOString(), isPlanned: false, acc: ln.accId || db.home.accs[0].id, loanAction: 'close', loanId: ln.id, principalPaid: kap, instReduced: instL });
+        ln.isClosed = true; ln.kapital = 0; ln.installmentsLeft = 0;
+        window.hSyncSchedule(); window.save(); window.render();
+        window.sysAlert("Kredyt Zamknięty! 🎉", `Jesteś wolny od tego długu! Zaoszczędzono ${savedInterest.toFixed(2)} zł odsetek.`, "success");
     });
 }
 
@@ -251,6 +292,7 @@ window.hOpenPayLoanModal = function(loanId, transId = null) {
             <button class="btn" style="background:transparent; color:var(--muted); box-shadow:none; margin-top:5px;" onclick="document.getElementById('m-pay-loan').remove()">ANULUJ</button>
         </div></div>`; document.body.insertAdjacentHTML('beforeend', html);
 }
+
 window.hExecPayLoan = function(loanId, transId) {
     let val = parseFloat(document.getElementById('mpl-val').value); let accId = document.getElementById('mpl-acc').value;
     if(!val || val <= 0) return window.sysAlert("Błąd", "Błędna kwota wpłaty!");
@@ -259,7 +301,7 @@ window.hExecPayLoan = function(loanId, transId) {
         let kap = parseFloat(ln.kapital)||0; let pct = parseFloat(ln.pct)||0; 
         let interest = kap * (pct / 100) / 12; let principalPaid = val - interest; 
         if(principalPaid < 0) principalPaid = 0; 
-        db.home.trans.unshift({ id: Date.now(), type: 'exp', cat: 'Kredyt / Leasing', v: val, d: 'Spłata raty: ' + ln.n, dt: new Date().toLocaleDateString('pl-PL'), rD: new Date().toISOString(), isPlanned: false, acc: accId });
+        db.home.trans.unshift({ id: Date.now(), type: 'exp', cat: 'Kredyt / Leasing', v: val, d: 'Spłata raty: ' + ln.n, dt: new Date().toLocaleDateString('pl-PL'), rD: new Date().toISOString(), isPlanned: false, acc: accId, loanAction: 'pay', loanId: ln.id, principalPaid: principalPaid, instReduced: 1 });
         ln.kapital = kap - principalPaid; ln.installmentsLeft = (parseInt(ln.installmentsLeft)||0) - 1;
         if(ln.kapital < 0) ln.kapital = 0; if(ln.installmentsLeft < 0) ln.installmentsLeft = 0;
         if(transId) { db.home.trans = db.home.trans.filter(x => x.id != transId); } 
@@ -269,6 +311,7 @@ window.hExecPayLoan = function(loanId, transId) {
     }
     let m = document.getElementById('m-pay-loan'); if(m) m.remove();
 }
+
 window.hOverpayLoan = function(loanId) {
     let ln = db.home.loans.find(x => x.id == loanId); if(!ln) return;
     let accOpts = db.home.accs.map(a => `<option value="${a.id}" ${a.id==(ln.accId||db.home.accs[0].id)?'selected':''}>${a.n}</option>`).join('');
@@ -286,12 +329,13 @@ window.hSaveOverpay = function(loanId) {
     if(!val || val <= 0) return window.sysAlert("Błąd", "Wpisz poprawną kwotę!");
     let ln = db.home.loans.find(x => x.id == loanId);
     if(ln) {
-        db.home.trans.unshift({ id: Date.now(), type: 'exp', cat: 'Kredyt / Leasing', v: val, d: 'Nadpłata kapitału: ' + ln.n, dt: new Date().toLocaleDateString('pl-PL'), rD: new Date().toISOString(), isPlanned: false, acc: accId });
+        db.home.trans.unshift({ id: Date.now(), type: 'exp', cat: 'Kredyt / Leasing', v: val, d: 'Nadpłata kapitału: ' + ln.n, dt: new Date().toLocaleDateString('pl-PL'), rD: new Date().toISOString(), isPlanned: false, acc: accId, loanAction: 'overpay', loanId: ln.id, principalPaid: val, instReduced: 0 });
         let kap = parseFloat(ln.kapital)||0; ln.kapital = kap - val;
         if(ln.kapital < 0) ln.kapital = 0; window.hSyncSchedule(); window.save(); window.render(); window.sysAlert("Nadpłacono!", `Zmniejszyłeś kapitał o ${val.toFixed(2)} zł z wybranego konta!`, "success");
     }
     document.getElementById('m-overpay').remove();
 }
+
 window.hPayLoanInstallment = function(transId) { let tr = db.home.trans.find(x => x.id == transId); if(tr && tr.loanId) { window.hOpenPayLoanModal(tr.loanId, tr.id); } }
 
 // --- CELE OSZCZĘDNOŚCIOWE ---
@@ -314,6 +358,7 @@ window.hSavePiggy = function() {
     if(!n || !t) return window.sysAlert("Błąd", "Podaj nazwę i kwotę docelową.");
     db.home.piggy.push({id: Date.now(), n:n, target:t, saved:s, deadline: d}); window.save(); window.render(); document.getElementById('m-piggy').remove();
 }
+
 window.hAddFundsPiggy = function(id) {
     let pg = db.home.piggy.find(x => x.id == id); if(!pg) return;
     let accOpts = db.home.accs.map(a => `<option value="${a.id}">${a.n}</option>`).join('');
@@ -332,7 +377,7 @@ window.hSaveFundsPiggy = function(id) {
     let pg = db.home.piggy.find(x => x.id == id);
     if(pg) {
         let dObj = new Date(); dObj.setHours(12,0,0);
-        db.home.trans.unshift({id:Date.now(), type:'exp', cat:'Oszczędności / Skarbonka', acc:accId, d:`Cel: ${pg.n}`, v:val, who:db.userName, dt:dObj.toLocaleDateString('pl-PL'), rD:dObj.toISOString(), isPlanned: false});
+        db.home.trans.unshift({id:Date.now(), type:'exp', cat:'Oszczędności / Skarbonka', acc:accId, d:`Cel: ${pg.n}`, v:val, who:db.userName, dt:dObj.toLocaleDateString('pl-PL'), rD:dObj.toISOString(), isPlanned: false, piggyAction: 'deposit', piggyId: pg.id, amount: val});
         pg.saved = (parseFloat(pg.saved)||0) + val; window.save(); window.render();
     }
     document.getElementById('m-add-funds').remove();
@@ -415,15 +460,16 @@ window.rHome = function() {
         }).join('') || '<div style="text-align:center;color:var(--muted);padding:20px 0; font-size:0.8rem;">Brak operacji na koncie.</div>'}</div>` + nav; 
     } 
 
-    // --- KOMPAKTOWE ZOBOWIĄZANIA (V11.2) ---
     if(t === 'goals') {
+        let activeLoans = db.home.loans.filter(l => !l.isClosed);
+        
         APP.innerHTML = hdr + `<div class="dash-hero" style="padding-bottom:10px;">
             <p style="letter-spacing:1px; color:var(--danger)">ZOBOWIĄZANIA FINANSOWE</p>
             <h1 style="color:#fff; font-size:2.5rem; margin-bottom:20px;">Kredyty i Leasingi</h1>
             <button class="btn btn-danger" style="border-radius:12px; font-weight:900; box-shadow:0 4px 20px rgba(239,68,68,0.4); width:auto; padding:12px 25px; font-size:0.9rem;" onclick="window.hOpenLoanModal()">+ DODAJ KREDYT</button>
         </div>
         <div style="padding: 10px 15px;">
-            ${db.home.loans.length === 0 ? '<div style="text-align:center; color:var(--muted); font-size:0.85rem; padding:10px 0 30px;">Brak kredytów. Ciesz się wolnością finansową! 🕊️</div>' : db.home.loans.map(l => {
+            ${activeLoans.length === 0 ? '<div style="text-align:center; color:var(--muted); font-size:0.85rem; padding:10px 0 30px;">Brak kredytów. Ciesz się wolnością finansową! 🕊️</div>' : activeLoans.map(l => {
                 let kap = parseFloat(l.kapital); if(isNaN(kap)) kap = parseFloat(l.left)||0;
                 let rat = parseFloat(l.rata)||0;
                 let instL = parseInt(l.installmentsLeft)||0;
