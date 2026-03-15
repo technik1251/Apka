@@ -1,5 +1,5 @@
 // ==========================================
-// PLIK 2: home.js - StyreOS 12.6 PRO (Hybrydowe Karty Kredytowe, Ostateczny Szlif)
+// PLIK 2: home.js - StyreOS 13.0 PRO (Inteligentny Wygląd Kredytów: Duży vs Kompaktowy)
 // ==========================================
 const FIXED_EXP_CATS = ['Stałe opłaty / Czynsz', 'Prąd / Gaz / Woda', 'Internet i Telefon', 'Kredyt / Leasing', 'Dom i Rachunki'];
 const C_EXP = { 'Stałe opłaty / Czynsz': {c: '#f59e0b', i: '🏢'}, 'Prąd / Gaz / Woda': {c: '#0ea5e9', i: '⚡'}, 'Internet i Telefon': {c: '#8b5cf6', i: '🌐'}, 'Kredyt / Leasing': {c: '#ef4444', i: '🏦'}, 'Zakupy Spożywcze': {c: '#22c55e', i: '🛒'}, 'Dom i Rachunki': {c: '#14b8a6', i: '🏠'}, 'Auto i Transport': {c: '#f59e0b', i: '🚗'}, 'Rozrywka': {c: '#a855f7', i: '🎉'}, 'Jedzenie na mieście': {c: '#ef4444', i: '🍔'}, 'Ubrania': {c: '#ec4899', i: '👗'}, 'Zdrowie': {c: '#10b981', i: '💊'}, 'Oszczędności / Skarbonka': {c: '#10b981', i: '🐷'}, 'Inne Wydatki': {c: '#64748b', i: '📦'} };
@@ -178,6 +178,7 @@ window.hSaveEditTrans = function(id) {
     document.getElementById('m-edit-h-trans').remove();
 };
 
+
 window.hOpenAccModal = function(id = null) {
     let ac = id ? db.home.accs.find(x => x.id === id) : null; 
     let n = ac ? ac.n : ''; let b = ac ? (parseFloat(ac.startBal)||0) : 0;
@@ -209,6 +210,7 @@ window.hShowIconPicker = function(accId) {
 window.hApplyIcon = function(id, ico, col) { let ac = db.home.accs.find(x => x.id === id); if(ac) { ac.i = ico; ac.c = col; window.save(); window.render(); } document.getElementById('m-icon-picker').remove(); }
 window.hDelAcc = function(id) { if(db.home.accs.length <= 1) return window.sysAlert("Błąd", "Musisz mieć min. 1 konto!"); window.sysConfirm("Usuwanie konta", "Na pewno? Znikną przypisane środki.", () => { db.home.accs = db.home.accs.filter(a => a.id !== id); window.save(); window.render(); }); }
 
+// --- MODUŁ KREDYTÓW I WYBÓR KONTA ---
 window.hOpenLoanModal = function(id = null) {
     let ln = id ? db.home.loans.find(x => x.id == id) : null;
     let n = ln ? ln.n : ''; 
@@ -502,7 +504,7 @@ window.rHome = function() {
         if (activeLoans.length === 0) {
             loansHtml = '<div style="text-align:center; color:var(--muted); font-size:0.85rem; padding:10px 0 30px;">Brak kredytów. Ciesz się wolnością finansową! 🕊️</div>';
         } else if (activeLoans.length <= 3) {
-            // WIDOK SZCZEGÓŁOWY DLA 1-3 KREDYTÓW
+            // WIDOK SZCZEGÓŁOWY
             loansHtml = activeLoans.map(l => {
                 let kap = parseFloat(l.kapital); if(isNaN(kap)) kap = parseFloat(l.left)||0;
                 let rat = parseFloat(l.rata)||0;
@@ -515,7 +517,7 @@ window.rHome = function() {
                 
                 let isError = totalCostRemaining < kap;
                 let errorHtml = isError ? `<div style="background:rgba(239,68,68,0.15); color:var(--danger); padding:8px; border-radius:8px; font-size:0.75rem; margin-top:10px; border:1px solid rgba(239,68,68,0.3); text-align:center;">⚠️ Błąd: Suma rat mniejsza niż kapitał!</div>` : '';
-                let savingsHtml = (!isError && savings > 0) ? `<div style="font-size:0.7rem; color:var(--success); margin-top:6px; font-weight:bold; text-align:center;">Spłacając dziś, unikasz ${savings.toFixed(2)} zł odsetek! 💸</div>` : '';
+                let savingsHtml = (!isError && savings > 0) ? `<div style="font-size:0.75rem; color:var(--success); margin-top:5px; font-weight:bold; text-align:center;">Spłacając dziś, unikasz ${savings.toFixed(2)} zł odsetek! 💸</div>` : '';
 
                 let pct = 0;
                 if(totInst > 0) { pct = ((totInst - instL) / totInst) * 100; }
@@ -534,11 +536,9 @@ window.rHome = function() {
                         ${errorHtml}
                         <span style="font-size:0.75rem; color:var(--muted); text-transform:uppercase;">KAPITAŁ POZOSTAŁY DO SPŁATY</span>
                         <div style="font-size:2.2rem; font-weight:900; color:#fff; margin-top:5px; letter-spacing:-1px;">${kap.toFixed(2)} PLN</div>
+                        ${savingsHtml}
                     </div>
                     <div style="padding:0 20px 15px;">
-                        <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
-                            <span style="color:var(--muted); font-size:0.85rem;">Przyznana kwota z banku</span><strong style="color:#fff; font-size:0.9rem;">${bor.toFixed(2)} PLN</strong>
-                        </div>
                         <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
                             <span style="color:var(--muted); font-size:0.85rem;">Całkowity koszt (Z odsetkami)</span><strong style="color:var(--danger); font-size:0.9rem;">${totalCostRemaining.toFixed(2)} PLN</strong>
                         </div>
@@ -555,7 +555,6 @@ window.rHome = function() {
                             <div style="display:flex; justify-content:space-between; margin-bottom:5px; font-size:0.75rem; color:var(--muted);"><span>Progres spłaty (W ratach)</span><span style="color:var(--success); font-weight:bold;">${pct.toFixed(1)}%</span></div>
                             <div style="width:100%; height:8px; background:rgba(0,0,0,0.5); border-radius:4px; overflow:hidden;"><div style="width:${pct}%; background:var(--success); height:100%;"></div></div>
                         </div>
-                        ${savingsHtml}
                     </div>
                     <div style="padding:0 20px 20px; display:flex; flex-direction:column; gap:10px;">
                         <button style="background:var(--danger); color:#fff; width:100%; padding:15px; border-radius:14px; font-weight:bold; font-size:0.9rem; border:none; box-shadow:0 6px 15px rgba(239,68,68,0.3); cursor:pointer;" onclick="window.hOpenPayLoanModal(${l.id})">💸 SPŁAĆ RATĘ ( ${rat.toFixed(2)} zł )</button>
@@ -568,13 +567,19 @@ window.rHome = function() {
                 </div>`;
             }).join('');
         } else {
-            // WIDOK KOMPAKTOWY (4+ KREDYTY)
+            // WIDOK KOMPAKTOWY
             loansHtml = `<div style="margin-bottom:15px; text-align:center; font-size:0.75rem; color:var(--info); font-weight:bold; background:rgba(14,165,233,0.1); padding:8px; border-radius:8px; border:1px solid rgba(14,165,233,0.3);">Włączono widok kompaktowy (${activeLoans.length} aktywne zobowiązania)</div>` + 
             activeLoans.map(l => {
                 let kap = parseFloat(l.kapital); if(isNaN(kap)) kap = parseFloat(l.left)||0;
                 let rat = parseFloat(l.rata)||0;
                 let instL = parseInt(l.installmentsLeft)||0;
                 let totInst = parseInt(l.totalInst)||0;
+                
+                let totalCostRemaining = rat * instL; 
+                let savings = totalCostRemaining - kap; 
+                let isError = totalCostRemaining < kap;
+                let errorHtml = isError ? `<div style="background:rgba(239,68,68,0.15); color:var(--danger); padding:4px; border-radius:4px; font-size:0.65rem; margin-bottom:8px; border:1px solid rgba(239,68,68,0.3); text-align:center;">⚠️ Błąd: Raty mniejsze niż kapitał!</div>` : '';
+                let savingsHtml = (!isError && savings > 0) ? `<div style="font-size:0.65rem; color:var(--success); margin-bottom:8px; font-weight:bold; text-align:center;">Spłacając dziś, unikasz ${savings.toFixed(2)} zł odsetek! 💸</div>` : '';
 
                 let pct = 0;
                 if(totInst > 0) { pct = ((totInst - instL) / totInst) * 100; }
@@ -587,14 +592,16 @@ window.rHome = function() {
                             <div style="width:35px; height:35px; border-radius:10px; background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); display:flex; align-items:center; justify-content:center; font-size:1.2rem;">🏦</div>
                             <div>
                                 <strong style="color:#fff; font-size:1rem; display:block; line-height:1.2;">${l.n}</strong>
-                                <span style="color:var(--muted); font-size:0.7rem;">Rata: <strong style="color:#fff">${rat.toFixed(2)} zł</strong></span>
+                                <span style="color:var(--muted); font-size:0.7rem;">Rata: <strong style="color:#fff">${rat.toFixed(2)} zł</strong> (${l.day} dzień)</span>
                             </div>
                         </div>
                         <div style="text-align:right;">
                             <strong style="color:#fff; font-size:1.1rem; line-height:1.2; display:block;">${kap.toFixed(2)} zł</strong>
-                            <span style="color:var(--muted); font-size:0.7rem;">Pozostało: ${instL} rat</span>
+                            <span style="color:var(--muted); font-size:0.7rem;">Pozostało: ${instL} z ${totInst} rat</span>
                         </div>
                     </div>
+                    ${savingsHtml}
+                    ${errorHtml}
                     <div style="width:100%; height:4px; background:rgba(255,255,255,0.05); border-radius:2px; overflow:hidden; margin-bottom:12px;">
                         <div style="width:${pct}%; background:var(--success); height:100%;"></div>
                     </div>
